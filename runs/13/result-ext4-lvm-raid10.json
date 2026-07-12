@@ -1,0 +1,35 @@
+{
+  "fs": "ext4",
+  "layout": "lvm-raid10",
+  "kernel": "7.0.0-1007-azure",
+  "version": "mke2fs 1.47.2 (1-Jan-2025)",
+  "date": "2026-07-12T15:30:56Z",
+  "devices": "loop",
+  "ndev": 4,
+  "calibration": {
+    "seqwrite_mbps": 404.7430830001831,
+    "randwrite_iops": 14509.892745
+  },
+  "results": {
+    "seqwrite_mbps": 190.60027885437012,
+    "randwrite_iops": 3078.194787,
+    "randread_iops": 3915.702810,
+    "aging_mbps": [
+      38.33483028411865,
+      39.018442153930664,
+      39.095906257629395,
+      39.05415630340576,
+      38.254631996154785,
+      38.50203037261963,
+      38.74678325653076,
+      38.81728553771973
+    ],
+    "snapshot_create_ms": 281,
+    "compress_ratio": null,
+    "compress_write_mbps": null,
+    "reflink_ms": null,
+    "degraded_randwrite_iops": null,
+    "degraded_randread_iops": null,
+    "rebuild_s": null
+  }
+}

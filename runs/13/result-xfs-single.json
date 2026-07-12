@@ -1,0 +1,35 @@
+{
+  "fs": "xfs",
+  "layout": "single",
+  "kernel": "7.0.0-1007-azure",
+  "version": "mkfs.xfs version 6.18.0",
+  "date": "2026-07-12T15:30:12Z",
+  "devices": "loop",
+  "ndev": 4,
+  "calibration": {
+    "seqwrite_mbps": 408.4563217163086,
+    "randwrite_iops": 14593.500266
+  },
+  "results": {
+    "seqwrite_mbps": 342.8188810348511,
+    "randwrite_iops": 4441.985267,
+    "randread_iops": 3620.945968,
+    "aging_mbps": [
+      78.35935020446777,
+      78.50352573394775,
+      77.43496608734131,
+      78.93925285339355,
+      78.14407730102539,
+      78.35935020446777,
+      77.24803829193115,
+      77.38814926147461
+    ],
+    "snapshot_create_ms": null,
+    "compress_ratio": null,
+    "compress_write_mbps": null,
+    "reflink_ms": 6,
+    "degraded_randwrite_iops": null,
+    "degraded_randread_iops": null,
+    "rebuild_s": null
+  }
+}
