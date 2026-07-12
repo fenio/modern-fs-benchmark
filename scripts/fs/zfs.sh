@@ -44,6 +44,11 @@ fs_teardown() {
   zpool destroy -f "$POOL" 2>/dev/null || true
 }
 
+fs_version() {
+  # "zfs-2.3.x / zfs-kmod-2.3.x" — userland and kernel module separately
+  zfs version 2>/dev/null | paste -sd' / ' -
+}
+
 fs_degrade() {
   zpool offline "$POOL" "${DEVICES[1]}"
 }

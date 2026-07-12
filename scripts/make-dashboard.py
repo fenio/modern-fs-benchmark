@@ -65,6 +65,7 @@ def load_runs(runs_dir):
             entity = f"{doc['fs']}/{doc['layout']}"
             entry = dict(doc.get("results", {}))
             entry["calibration"] = doc.get("calibration")
+            entry["version"] = doc.get("version") or None
             results[entity] = entry
             dates.append(doc.get("date", ""))
             kernels.add(doc.get("kernel", "?"))
@@ -423,13 +424,15 @@ const tbl = el("table");
 tbl.appendChild(el("tr", {},
   "<th>filesystem</th>" +
   DATA.metrics.map(m => `<th>${m.label}<br><span class="unit">${m.unit}</span></th>`).join("") +
-  "<th>calib seq<br><span class=\"unit\">MB/s</span></th><th>calib rand<br><span class=\"unit\">IOPS</span></th>"));
+  "<th>calib seq<br><span class=\"unit\">MB/s</span></th><th>calib rand<br><span class=\"unit\">IOPS</span></th>" +
+  "<th>tools / module version</th>"));
 ents.forEach((e, i) => {
   const r = latest.results[e.id] || {}, c = r.calibration || {};
   tbl.appendChild(el("tr", {},
     `<td><span style="display:inline-flex;align-items:center;gap:7px">${key(e)}${e.id}</span></td>` +
     DATA.metrics.map(m => `<td>${fmt(r[m.key])}</td>`).join("") +
-    `<td>${fmt(c.seqwrite_mbps)}</td><td>${fmt(c.randwrite_iops)}</td>`));
+    `<td>${fmt(c.seqwrite_mbps)}</td><td>${fmt(c.randwrite_iops)}</td>` +
+    `<td style="text-align:left">${r.version || "—"}</td>`));
 });
 wrap.appendChild(tbl);
 app.appendChild(wrap);

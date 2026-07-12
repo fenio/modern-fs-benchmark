@@ -41,7 +41,8 @@ rm -f "$DISK_DIR"/calib-*.0.0
 log "calibration: seq ${CALIB_SEQ_MBPS%.*} MB/s, rand ${CALIB_RAND_IOPS%.*} IOPS"
 
 fs_setup
-log "$FS ($LAYOUT) mounted at $MNT, data dir $DATA"
+FS_VERSION=$(fs_version 2>/dev/null || true)
+log "$FS ($LAYOUT) mounted at $MNT, data dir $DATA${FS_VERSION:+ [$FS_VERSION]}"
 
 # --- Phase 1: sequential write -------------------------------------------
 log "phase: sequential write ($SEQ_SIZE)"
@@ -153,6 +154,7 @@ jq -n \
   --arg fs "$FS" \
   --arg layout "$LAYOUT" \
   --arg kernel "$(uname -r)" \
+  --arg version "$FS_VERSION" \
   --arg date "$(date -u +%FT%TZ)" \
   --arg devices "${BENCH_DEVICES:-loop}" \
   --argjson ndev "${#DEVICES[@]}" \
@@ -169,7 +171,7 @@ jq -n \
   --argjson rebuild_s "$REBUILD_S" \
   --argjson calib_seqwrite_mbps "$CALIB_SEQ_MBPS" \
   --argjson calib_randwrite_iops "$CALIB_RAND_IOPS" \
-  '{fs: $fs, layout: $layout, kernel: $kernel, date: $date,
+  '{fs: $fs, layout: $layout, kernel: $kernel, version: $version, date: $date,
     devices: $devices, ndev: $ndev,
     calibration: {seqwrite_mbps: $calib_seqwrite_mbps,
                   randwrite_iops: $calib_randwrite_iops},

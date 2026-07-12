@@ -60,3 +60,7 @@ fs_rebuild() {
 fs_teardown() {
   umount "$MNT" 2>/dev/null || true
 }
+
+fs_version() {
+  btrfs --version 2>/dev/null | head -1
+}

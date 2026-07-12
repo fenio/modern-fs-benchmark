@@ -89,7 +89,10 @@ fs_degrade() {
 
 fs_rebuild() {
   bcachefs device online "${DEVICES[1]}"
-  # re-replication runs as background reconcile in current tools;
+  # The reconcile scan is scheduled asynchronously after a rejoin — an
+  # immediate wait returns before any work is queued (measured 0s). Give
+  # the scan a moment to queue; the 5s settle is included in rebuild_s.
+  sleep 5
   # "data rereplicate" is the pre-reconcile fallback
   bcachefs reconcile wait "$MNT" 2>/dev/null \
     || bcachefs data rereplicate "$MNT"
@@ -97,4 +100,11 @@ fs_rebuild() {
 
 fs_teardown() {
   umount "$MNT" 2>/dev/null || true
+}
+
+fs_version() {
+  local tools mod
+  tools=$(bcachefs version 2>/dev/null | head -1)
+  mod=$(modinfo -F version bcachefs 2>/dev/null | head -1)
+  echo "tools ${tools:-?} / module ${mod:-?}"
 }

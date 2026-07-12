@@ -22,3 +22,4 @@ fs_compress_ratio() { echo null; }
 fs_degrade() { layered_degrade; }
 fs_rebuild() { layered_rebuild; }
 fs_teardown() { layered_teardown; }
+fs_version() { mke2fs -V 2>&1 | head -1; }

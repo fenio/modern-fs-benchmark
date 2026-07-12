@@ -59,6 +59,11 @@ fs_drop_caches() {
 fs_degrade() { return 1; }
 fs_rebuild() { return 1; }
 
+# Tool/module version string recorded in the result JSON. Matters most for
+# out-of-tree modules (ZFS, bcachefs DKMS) where the kernel version alone
+# says nothing about what was actually tested.
+fs_version() { echo ""; }
+
 # Populate DEVICES[] — real devices from BENCH_DEVICES, or loop devices.
 setup_devices() {
   if [ -n "${BENCH_DEVICES:-}" ]; then

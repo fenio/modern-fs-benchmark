@@ -1,4 +1,4 @@
-# modern-fs-test
+# modern-fs-benchmark
 
 Continuous benchmarks for **multi-device, copy-on-write filesystems** — btrfs,
 ZFS, bcachefs — measuring the things single-device ext4-style benchmarks
@@ -24,6 +24,11 @@ This suite benchmarks the *machinery*:
 Results are published as a dashboard: **<https://bartosz.fenski.pl/modern-fs-benchmark/>**
 (charts for the latest run, aging curves, and trends across runs; history lives
 on the `results-data` branch).
+
+Every result records the exact tools *and kernel-module* versions tested —
+essential for ZFS and bcachefs, which are out-of-tree, where the kernel
+version alone doesn't identify what actually ran. Shown in the dashboard
+table, stored in the JSON.
 
 Default matrix (4 devices, 2-copy redundancy, plus baselines):
 
@@ -83,6 +88,17 @@ then trigger the workflow manually (`workflow_dispatch`) with `runs_on` set to
 your runner label and `devices` set to the disks to use. Scale up workload
 sizes via env (`SEQ_SIZE`, `AGING_SIZE`, `AGING_ITERS`, …) — CI defaults are
 sized for 4×16 GB loop files.
+
+**The plan is bigger than loop devices.** CI is the regression-tracking
+harness; the goal is to gather dedicated hardware and run the REAL tests
+there — including the tiered topologies these filesystems were built for and
+that no publication benchmarks today: NVMe cache/metadata in front of
+rotational data disks (bcachefs foreground/background targets, ZFS
+special/log/cache vdevs, LVM dm-cache with writeback and writethrough),
+mixed-rotational RAID, and how each setup behaves degraded and while
+rebuilding. Same suite, same JSON, same dashboard — only the device lists and
+topology descriptions change. If you have hardware or topology suggestions,
+open an issue.
 
 ### Locally (Linux, loop devices)
 
