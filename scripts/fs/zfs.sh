@@ -37,3 +37,13 @@ fs_compress_ratio() {
 fs_teardown() {
   zpool destroy -f "$POOL" 2>/dev/null || true
 }
+
+# drop_caches does not touch the ARC — export/import the pool for a genuinely
+# cold read cache.
+fs_drop_caches() {
+  zpool export "$POOL"
+  drop_caches
+  local args=() d
+  for d in "${DEVICES[@]}"; do args+=(-d "$d"); done
+  zpool import "${args[@]}" "$POOL"
+}

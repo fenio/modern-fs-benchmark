@@ -24,7 +24,8 @@ Default matrix (4 devices, 2-copy redundancy, plus a baseline):
 - **ext4** — single device (the "what does CoW cost" anchor)
 - **btrfs** — `-d raid1 -m raid1`
 - **ZFS** — striped mirror pairs (raid10-like)
-- **bcachefs** — `--replicas=2` (experimental; skipped if the kernel lacks support)
+- **bcachefs** — `--replicas=2` (experimental; kernel module built via DKMS from
+  [apt.bcachefs.org](https://apt.bcachefs.org/) since bcachefs left mainline in 6.17)
 
 ## How it runs
 
@@ -58,7 +59,7 @@ To drive real hardware from GitHub: register the machine as a
 then trigger the workflow manually (`workflow_dispatch`) with `runs_on` set to
 your runner label and `devices` set to the disks to use. Scale up workload
 sizes via env (`SEQ_SIZE`, `AGING_SIZE`, `AGING_ITERS`, …) — CI defaults are
-sized for 4×8 GB loop files.
+sized for 4×16 GB loop files.
 
 ### Locally (Linux, loop devices)
 
@@ -87,5 +88,4 @@ Adding a filesystem = one file in `scripts/fs/` implementing `fs_setup`,
       and track behavioral regressions per kernel release
 - [ ] Persist results to a branch + static dashboard charting trends over time
 - [ ] Degraded-mode tests: yank a device, measure degraded mount + rebuild/scrub time
-- [ ] bcachefs via DKMS on runners whose kernel lacks it
 - [ ] send/receive and device add/remove/rebalance timing

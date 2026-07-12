@@ -45,7 +45,7 @@ rm -f "$DATA"/randwrite*
 log "phase: random read 4k, ${RUNTIME}s"
 fio --name=readprep --filename="$DATA/read.dat" --rw=write --bs=1M \
   --size="$READ_SIZE" --end_fsync=1 --output=/dev/null
-drop_caches
+fs_drop_caches
 out=$(fio_json randread --filename="$DATA/read.dat" --rw=randread --bs=4k \
   --size="$READ_SIZE" --runtime="$RUNTIME" --time_based)
 RANDREAD_IOPS=$(jq '.jobs[0].read.iops' "$out")

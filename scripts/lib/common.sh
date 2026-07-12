@@ -12,7 +12,7 @@ set -euo pipefail
 DISK_DIR=${DISK_DIR:-/mnt/fsbench-disks}
 MNT=${MNT:-/mnt/fsbench}
 NDEV=${NDEV:-4}
-DEV_SIZE=${DEV_SIZE:-8G}
+DEV_SIZE=${DEV_SIZE:-16G}
 RESULTS_DIR=${RESULTS_DIR:-$PWD/results}
 AGING_ITERS=${AGING_ITERS:-8}
 
@@ -40,6 +40,12 @@ now_ms() { date +%s%3N; }
 drop_caches() {
   sync
   echo 3 > /proc/sys/vm/drop_caches
+}
+
+# Cold-cache barrier before read phases. Backends with their own cache
+# (ZFS ARC ignores drop_caches) override this.
+fs_drop_caches() {
+  drop_caches
 }
 
 # Populate DEVICES[] — real devices from BENCH_DEVICES, or loop devices.

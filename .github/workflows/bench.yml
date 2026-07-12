@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
     inputs:
       runs_on:
-        description: 'Runner label (use your self-hosted label for real hardware)'
-        default: 'ubuntu-24.04'
+        description: 'Runner label override (use your self-hosted label for real hardware)'
+        default: ''
       devices:
         description: 'Real block devices, space-separated (e.g. "/dev/sdb /dev/sdc /dev/sdd /dev/sde"). THEY WILL BE WIPED. Empty = loop devices.'
         default: ''
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   bench:
-    runs-on: ${{ inputs.runs_on || 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.runs_on || 'ubuntu-26.04' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -39,7 +39,7 @@ jobs:
       BENCH_DEVICES: ${{ inputs.devices }}
       BENCH_WIPE: ${{ inputs.devices != '' && '1' || '0' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install dependencies
         run: sudo scripts/install-deps.sh ${{ matrix.fs }}
@@ -56,7 +56,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-${{ matrix.fs }}-${{ matrix.layout }}
           path: results/

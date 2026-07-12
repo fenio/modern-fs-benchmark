@@ -20,8 +20,10 @@ fs_snapshot() {
 }
 
 fs_setup_compression() {
+  # compress-force bypasses the compressibility heuristic; the property-based
+  # approach left data uncompressed on 6.17 (ratio 1.0 in CI)
+  mount -o "remount,compress-force=zstd" "$MNT"
   btrfs subvolume create "$1" >/dev/null
-  btrfs property set "$1" compression zstd
 }
 
 fs_compress_ratio() {
