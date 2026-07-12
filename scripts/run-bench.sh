@@ -76,10 +76,12 @@ done
 log "phase: compression"
 COMP_RATIO=null
 COMP_MBPS=null
-if fs_setup_compression "$MNT/comp" 2>/dev/null; then
+if fs_setup_compression "$MNT/comp"; then
+  # fallocate=none: btrfs (at least) never compresses writes into
+  # preallocated extents, and fio preallocates by default
   out=$(fio_json compwrite --directory="$MNT/comp" --rw=write --bs=1M \
     --size="$COMP_SIZE" --end_fsync=1 --refill_buffers \
-    --buffer_compress_percentage=75)
+    --buffer_compress_percentage=75 --fallocate=none)
   COMP_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out")
   sync
   COMP_RATIO=$(fs_compress_ratio "$MNT/comp")
@@ -100,7 +102,8 @@ fi
 # --- Assemble result -------------------------------------------------------
 AGING_JSON=$(printf '%s\n' "${AGING_BW[@]}" | jq -s '.')
 if [ "${#SNAP_MS[@]}" -gt 0 ]; then
-  SNAP_AVG=$(printf '%s\n' "${SNAP_MS[@]}" | jq -s 'add / length | round')
+  # median, not mean — VM clock steps can corrupt individual samples
+  SNAP_AVG=$(printf '%s\n' "${SNAP_MS[@]}" | jq -s 'sort | .[length/2|floor]')
 else
   SNAP_AVG=null
 fi

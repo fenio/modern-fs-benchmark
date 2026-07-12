@@ -35,7 +35,12 @@ require_root() {
   [ "$(id -u)" -eq 0 ] || die "must run as root (mounts, mkfs, losetup)"
 }
 
-now_ms() { date +%s%3N; }
+# Millisecond timestamps via the bash builtin — `date +%s%3N` returns
+# nanoseconds on newer coreutils, which silently corrupted timings.
+now_ms() {
+  local t=${EPOCHREALTIME/,/.}
+  echo $(( ${t%.*} * 1000 + 10#${t#*.} / 1000 ))
+}
 
 drop_caches() {
   sync

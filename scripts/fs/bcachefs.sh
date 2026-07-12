@@ -22,7 +22,9 @@ fs_snapshot() {
 
 fs_setup_compression() {
   mkdir -p "$1"
-  bcachefs setattr --compression=zstd "$1"
+  # renamed from "setattr" in newer bcachefs-tools
+  bcachefs set-file-option --compression=zstd "$1" 2>/dev/null \
+    || bcachefs setattr --compression=zstd "$1"
 }
 
 fs_compress_ratio() {
