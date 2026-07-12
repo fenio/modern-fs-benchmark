@@ -1,0 +1,34 @@
+{
+  "fs": "zfs",
+  "layout": "mirror-8k",
+  "kernel": "7.0.0-1007-azure",
+  "date": "2026-07-12T14:01:25Z",
+  "devices": "loop",
+  "ndev": 4,
+  "calibration": {
+    "seqwrite_mbps": 410.25640964508057,
+    "randwrite_iops": 14725.418305
+  },
+  "results": {
+    "seqwrite_mbps": 163.2913408279419,
+    "randwrite_iops": 9873.270891,
+    "randread_iops": 6035.032166,
+    "aging_mbps": [
+      66.78841590881348,
+      67.63540267944336,
+      66.8232831954956,
+      66.85818672180176,
+      66.75358486175537,
+      67.49274921417236,
+      67.72486686706543,
+      72.5212459564209
+    ],
+    "snapshot_create_ms": 1198,
+    "compress_ratio": 3.16,
+    "compress_write_mbps": 235.32115268707275,
+    "reflink_ms": null,
+    "degraded_randwrite_iops": 10686.443785,
+    "degraded_randread_iops": 5795.573481,
+    "rebuild_s": 26
+  }
+}
