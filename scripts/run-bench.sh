@@ -116,7 +116,42 @@ if [ "${FS_REFLINK:-0}" = 1 ]; then
   fi
 fi
 
-# --- Phase 7: degraded mode + rebuild --------------------------------------
+# --- Phase 7: silent corruption + scrub + self-healing ---------------------
+# Overwrite 2G on one device *behind the filesystem's back*, scrub, then
+# verify the test file. Checksummed CoW filesystems repair from the good
+# copy; md/lvm can only count mismatches (no checksums to know which leg
+# is right) and may serve corrupted data — that's the point of the test.
+SCRUB_S=null
+SCRUB_FOUND=null
+SCRUB_REPAIRED=null
+DATA_INTACT=null
+if [ "$LAYOUT" != single ] && [ "${#DEVICES[@]}" -ge 3 ]; then
+  log "phase: silent corruption (2G of garbage onto ${DEVICES[2]}), then scrub"
+  sync
+  MD5_BEFORE=$(md5sum "$DATA/read.dat" | cut -d' ' -f1)
+  dd if=/dev/urandom of="${DEVICES[2]}" bs=1M seek=1024 count=2048 \
+    conv=notrunc oflag=direct status=none
+  drop_caches
+  t0=$(now_ms)
+  if counts=$(fs_scrub 2>"$RESULTS_DIR/raw/$BENCH_ID-scrub.log"); then
+    SCRUB_S=$(( ($(now_ms) - t0) / 1000 ))
+    SCRUB_FOUND=$(awk '{print $1}' <<<"$counts")
+    SCRUB_REPAIRED=$(awk '{print $2}' <<<"$counts")
+    [[ $SCRUB_FOUND =~ ^[0-9]+$ ]] || SCRUB_FOUND=null
+    [[ $SCRUB_REPAIRED =~ ^[0-9]+$ ]] || SCRUB_REPAIRED=null
+  else
+    log "scrub unsupported on $FS ($LAYOUT)"
+  fi
+  fs_drop_caches || true
+  if [ "$(md5sum "$DATA/read.dat" 2>/dev/null | cut -d' ' -f1)" = "$MD5_BEFORE" ]; then
+    DATA_INTACT=true
+  else
+    DATA_INTACT=false
+  fi
+  log "scrub: ${SCRUB_S}s, found=$SCRUB_FOUND repaired=$SCRUB_REPAIRED data-intact=$DATA_INTACT"
+fi
+
+# --- Phase 8: degraded mode + rebuild --------------------------------------
 DEG_WRITE_IOPS=null
 DEG_READ_IOPS=null
 REBUILD_S=null
@@ -169,6 +204,10 @@ jq -n \
   --argjson degraded_randwrite_iops "$DEG_WRITE_IOPS" \
   --argjson degraded_randread_iops "$DEG_READ_IOPS" \
   --argjson rebuild_s "$REBUILD_S" \
+  --argjson scrub_s "$SCRUB_S" \
+  --argjson scrub_found "$SCRUB_FOUND" \
+  --argjson scrub_repaired "$SCRUB_REPAIRED" \
+  --argjson data_intact "$DATA_INTACT" \
   --argjson calib_seqwrite_mbps "$CALIB_SEQ_MBPS" \
   --argjson calib_randwrite_iops "$CALIB_RAND_IOPS" \
   '{fs: $fs, layout: $layout, kernel: $kernel, version: $version, date: $date,
@@ -185,7 +224,11 @@ jq -n \
               reflink_ms: $reflink_ms,
               degraded_randwrite_iops: $degraded_randwrite_iops,
               degraded_randread_iops: $degraded_randread_iops,
-              rebuild_s: $rebuild_s}}' \
+              rebuild_s: $rebuild_s,
+              scrub_s: $scrub_s,
+              scrub_found: $scrub_found,
+              scrub_repaired: $scrub_repaired,
+              data_intact: $data_intact}}' \
   > "$RESULTS_DIR/result-$BENCH_ID.json"
 
 chmod -R a+rX "$RESULTS_DIR"

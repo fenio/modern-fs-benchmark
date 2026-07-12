@@ -44,6 +44,21 @@ fs_teardown() {
   zpool destroy -f "$POOL" 2>/dev/null || true
 }
 
+fs_scrub() {
+  zpool scrub "$POOL"
+  zpool wait -t scrub "$POOL"
+  local status found
+  status=$(zpool status "$POOL")
+  echo "$status" >&2
+  # sum the CKSUM column over member devices
+  found=$(awk '$1 ~ /^loop|^\/dev|^sd|^nvme/ && NF >= 5 {s += $5} END {print s+0}' <<<"$status")
+  if grep -q 'with 0 errors' <<<"$status"; then
+    echo "$found $found"  # everything found was repaired
+  else
+    echo "$found null"
+  fi
+}
+
 fs_version() {
   # "zfs-2.3.x / zfs-kmod-2.3.x" — userland and kernel module separately
   zfs version 2>/dev/null | paste -sd' / ' -

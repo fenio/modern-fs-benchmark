@@ -59,6 +59,11 @@ fs_drop_caches() {
 fs_degrade() { return 1; }
 fs_rebuild() { return 1; }
 
+# Scrub hook: run a full scrub/check to completion, print "<found> <repaired>"
+# counts on stdout (fs-specific units; "null" when unparseable), diagnostics
+# to stderr. Default: unsupported.
+fs_scrub() { return 1; }
+
 # Tool/module version string recorded in the result JSON. Matters most for
 # out-of-tree modules (ZFS, bcachefs DKMS) where the kernel version alone
 # says nothing about what was actually tested.

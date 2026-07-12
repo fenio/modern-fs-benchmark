@@ -61,6 +61,15 @@ fs_teardown() {
   umount "$MNT" 2>/dev/null || true
 }
 
+fs_scrub() {
+  local out found corrected
+  out=$(btrfs scrub start -B "$MNT" 2>&1) || true  # exits non-zero when errors were found
+  echo "$out" >&2
+  found=$(grep -oE 'csum=[0-9]+' <<<"$out" | head -1 | cut -d= -f2)
+  corrected=$(grep -iE '^[[:space:]]*corrected' <<<"$out" | grep -oE '[0-9]+' | head -1)
+  echo "${found:-null} ${corrected:-null}"
+}
+
 fs_version() {
   btrfs --version 2>/dev/null | head -1
 }

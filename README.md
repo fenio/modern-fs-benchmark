@@ -20,6 +20,7 @@ This suite benchmarks the *machinery*:
 | compression | zstd ratio + write throughput on 75%-compressible data |
 | reflink | `cp --reflink=always` of a large file |
 | degraded + rebuild | fail one device: IO while degraded, then time the rebuild onto a spare |
+| corruption + scrub | write 2G of garbage onto one device behind the filesystem's back, scrub, verify the data: CoW filesystems detect and repair from checksums; md/lvm only count mismatches and may silently serve the corrupted copy |
 
 Results are published as a dashboard: **<https://bartosz.fenski.pl/modern-fs-benchmark/>**
 (charts for the latest run, aging curves, and trends across runs; history lives
@@ -143,10 +144,6 @@ Tuned variants sit next to the defaults in the same matrix (see
 
 CoW-specific phases (the behaviors nothing mainstream benchmarks):
 
-- [ ] **Scrub + self-healing**: corrupt one replica on the raw device, scrub,
-      verify errors are detected AND repaired from the good copy; run the same
-      against md/lvm-raid10 to show the classic stack can't even tell which
-      copy is right (no checksums). Plus scrub duration per filesystem.
 - [ ] **Snapshot delete / space reclaim**: delete latency, time until the
       space actually returns, and foreground IO impact while background
       reclaim runs (btrfs cleaner thread vs ZFS vs bcachefs vs `lvremove`)

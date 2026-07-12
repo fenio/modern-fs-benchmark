@@ -43,6 +43,7 @@ METRICS = [
     ("degraded_randwrite_iops", "Degraded random write", "IOPS", "higher"),
     ("degraded_randread_iops", "Degraded random read", "IOPS", "higher"),
     ("rebuild_s", "Rebuild after device loss", "s", "lower"),
+    ("scrub_s", "Scrub after corruption", "s", "lower"),
 ]
 
 
@@ -218,6 +219,7 @@ const key = e =>
 const latest = DATA.runs[DATA.runs.length - 1];
 const ents = DATA.entities;
 const fmt = v => v == null ? "—"
+  : typeof v === "string" ? v
   : v >= 100 ? Math.round(v).toLocaleString("en-US")
   : v >= 10 ? (v % 1 ? v.toFixed(1) : String(v))
   : (Math.round(v * 100) / 100).toString();
@@ -425,6 +427,10 @@ const tbl = el("table");
 const cols = [
   {label: "filesystem", str: true, get: (e, r, c) => e.id},
   ...DATA.metrics.map(m => ({label: m.label, unit: m.unit, get: (e, r, c) => r[m.key]})),
+  {label: "scrub errors found", get: (e, r, c) => r.scrub_found},
+  {label: "scrub repaired", get: (e, r, c) => r.scrub_repaired},
+  {label: "data intact after corruption", str: true,
+   get: (e, r, c) => r.data_intact == null ? null : (r.data_intact ? "yes" : "NO")},
   {label: "calib seq", unit: "MB/s", get: (e, r, c) => c.seqwrite_mbps},
   {label: "calib rand", unit: "IOPS", get: (e, r, c) => c.randwrite_iops},
   {label: "tools / module version", str: true, get: (e, r, c) => r.version},

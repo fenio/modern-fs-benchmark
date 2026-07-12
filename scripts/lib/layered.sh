@@ -98,6 +98,33 @@ layered_rebuild() {
   esac
 }
 
+# "Scrub" for the classic stack: a raid check counts sectors that differ
+# between mirror legs, but with no checksums it cannot know which leg is
+# right — repaired is always 0, and reads may serve the corrupted copy.
+layered_scrub() {
+  case "${LAYOUT:-single}" in
+    md-*)
+      local md
+      md=$(readlink -f /dev/md/fsbench)
+      md=${md##*/}
+      echo check > "/sys/block/$md/md/sync_action"
+      mdadm --wait /dev/md/fsbench >&2 || true
+      echo "$(cat "/sys/block/$md/md/mismatch_cnt") 0"
+      ;;
+    lvm-*)
+      lvchange --syncaction check "$VG/bench" >&2
+      local i act
+      for i in $(seq 1 300); do
+        act=$(lvs --noheadings -o raid_sync_action "$VG/bench" 2>/dev/null | tr -d ' ')
+        [ "$act" = idle ] && break
+        sleep 2
+      done
+      echo "$(lvs --noheadings -o raid_mismatch_count "$VG/bench" | tr -d ' ') 0"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 layered_teardown() {
   umount "$MNT" 2>/dev/null || true
   case "${LAYOUT:-single}" in

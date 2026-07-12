@@ -101,6 +101,17 @@ fs_teardown() {
   umount "$MNT" 2>/dev/null || true
 }
 
+fs_scrub() {
+  local out fixed
+  out=$(bcachefs scrub "$MNT" 2>&1) || return 1
+  echo "$out" >&2
+  # output format varies across tool versions — best-effort count parse;
+  # the md5 verdict in run-bench is the authoritative result
+  fixed=$(grep -oiE '[0-9]+[[:space:]]+(errors?[[:space:]]+)?(corrected|fixed)' <<<"$out" \
+    | grep -oE '[0-9]+' | head -1)
+  echo "${fixed:-null} ${fixed:-null}"
+}
+
 fs_version() {
   local tools mod
   tools=$(bcachefs version 2>/dev/null | head -1)
