@@ -141,7 +141,35 @@ Tuned variants sit next to the defaults in the same matrix (see
 
 ## Roadmap
 
+CoW-specific phases (the behaviors nothing mainstream benchmarks):
+
+- [ ] **Scrub + self-healing**: corrupt one replica on the raw device, scrub,
+      verify errors are detected AND repaired from the good copy; run the same
+      against md/lvm-raid10 to show the classic stack can't even tell which
+      copy is right (no checksums). Plus scrub duration per filesystem.
+- [ ] **Snapshot delete / space reclaim**: delete latency, time until the
+      space actually returns, and foreground IO impact while background
+      reclaim runs (btrfs cleaner thread vs ZFS vs bcachefs vs `lvremove`)
+- [ ] **fsync tail latency**: p99/p99.9 completion latency from the existing
+      random-write phase — CoW transaction commits (ZFS txg, btrfs commit
+      interval) cause periodic spikes that averages hide
+- [ ] **Near-full / ENOSPC behavior**: throughput at 95–99% full, and whether
+      deleting files still works at 100% (CoW needs free space to delete)
+- [ ] **Clone divergence**: first-write-after-reflink/-snapshot cost — the
+      unshare penalty; XFS participates, making it integrated-vs-classic
+- [ ] **send/receive**: full + incremental stream throughput (btrfs, ZFS);
+      rsync over the classic stack as the contrast; bcachefs: not available
+- [ ] **Snapshot-count scaling**: create/mount/df cost at 500+ snapshots
+- [ ] **Encryption variants**: native (ZFS per-dataset AES-GCM, bcachefs
+      whole-fs ChaCha20/Poly1305) vs layered (LUKS/dm-crypt under each
+      device — the only option for btrfs and the classic stack; note
+      multi-device fs over LUKS pays one encryption layer *per device*),
+      plus ext4 fscrypt; measure throughput overhead and the interplay
+      with compression (encrypt-after-compress vs opaque blocks)
+
+Infrastructure:
+
 - [ ] Kernel matrix: boot mainline kernels in qemu (runners support nested KVM)
       and track behavioral regressions per kernel release
-- [ ] send/receive and device add/remove/rebalance timing
+- [ ] Device add/remove/rebalance timing
 - [ ] Normalize cross-job comparisons by the calibration anchor in the dashboard
