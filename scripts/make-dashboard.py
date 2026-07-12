@@ -419,22 +419,52 @@ if (DATA.runs.length >= 2) {
 }
 
 app.appendChild(el("h2", {}, "Table view"));
-app.appendChild(el("p", {class: "note"}, "Latest run, all metrics. calib = host-disk anchor measured before the filesystem exists (VM noise indicator)."));
+app.appendChild(el("p", {class: "note"}, "Latest run, all metrics — click a column header to sort. calib = host-disk anchor measured before the filesystem exists (VM noise indicator)."));
 const wrap = el("div", {class: "card wide"});
 const tbl = el("table");
-tbl.appendChild(el("tr", {},
-  "<th>filesystem</th>" +
-  DATA.metrics.map(m => `<th>${m.label}<br><span class="unit">${m.unit}</span></th>`).join("") +
-  "<th>calib seq<br><span class=\"unit\">MB/s</span></th><th>calib rand<br><span class=\"unit\">IOPS</span></th>" +
-  "<th>tools / module version</th>"));
-ents.forEach((e, i) => {
-  const r = latest.results[e.id] || {}, c = r.calibration || {};
-  tbl.appendChild(el("tr", {},
-    `<td><span style="display:inline-flex;align-items:center;gap:7px">${key(e)}${e.id}</span></td>` +
-    DATA.metrics.map(m => `<td>${fmt(r[m.key])}</td>`).join("") +
-    `<td>${fmt(c.seqwrite_mbps)}</td><td>${fmt(c.randwrite_iops)}</td>` +
-    `<td style="text-align:left">${r.version || "—"}</td>`));
-});
+const cols = [
+  {label: "filesystem", str: true, get: (e, r, c) => e.id},
+  ...DATA.metrics.map(m => ({label: m.label, unit: m.unit, get: (e, r, c) => r[m.key]})),
+  {label: "calib seq", unit: "MB/s", get: (e, r, c) => c.seqwrite_mbps},
+  {label: "calib rand", unit: "IOPS", get: (e, r, c) => c.randwrite_iops},
+  {label: "tools / module version", str: true, get: (e, r, c) => r.version},
+];
+let sortCol = null, sortDir = 1;  // null = matrix order
+function renderTable() {
+  tbl.innerHTML = "";
+  const head = el("tr");
+  cols.forEach((col, ci) => {
+    const arrow = sortCol === ci ? (sortDir > 0 ? " ▲" : " ▼") : "";
+    const th = el("th", {style: "cursor:pointer;user-select:none",
+      "aria-sort": sortCol === ci ? (sortDir > 0 ? "ascending" : "descending") : "none"},
+      `${col.label}${arrow}${col.unit ? `<br><span class="unit">${col.unit}</span>` : ""}`);
+    th.addEventListener("click", () => {
+      if (sortCol === ci) sortDir = -sortDir;
+      else { sortCol = ci; sortDir = col.str ? 1 : -1; }  // numbers: biggest first
+      renderTable();
+    });
+    head.appendChild(th);
+  });
+  tbl.appendChild(head);
+  const rows = ents.map(e => {
+    const r = latest.results[e.id] || {}, c = r.calibration || {};
+    return {e, vals: cols.map(col => col.get(e, r, c))};
+  });
+  if (sortCol != null) rows.sort((a, b) => {
+    const x = a.vals[sortCol], y = b.vals[sortCol];
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;  // nulls last, either direction
+    if (y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * sortDir;
+  });
+  rows.forEach(({e, vals}) => {
+    tbl.appendChild(el("tr", {},
+      `<td><span style="display:inline-flex;align-items:center;gap:7px">${key(e)}${e.id}</span></td>` +
+      vals.slice(1, cols.length - 1).map(v => `<td>${fmt(v)}</td>`).join("") +
+      `<td style="text-align:left">${vals[cols.length - 1] || "—"}</td>`));
+  });
+}
+renderTable();
 wrap.appendChild(tbl);
 app.appendChild(wrap);
 
