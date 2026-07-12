@@ -89,7 +89,10 @@ fs_degrade() {
 
 fs_rebuild() {
   bcachefs device online "${DEVICES[1]}"
-  bcachefs data rereplicate "$MNT"
+  # re-replication runs as background reconcile in current tools;
+  # "data rereplicate" is the pre-reconcile fallback
+  bcachefs reconcile wait "$MNT" 2>/dev/null \
+    || bcachefs data rereplicate "$MNT"
 }
 
 fs_teardown() {
