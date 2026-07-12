@@ -169,7 +169,8 @@ h2 { font-size: 15px; font-weight: 650; margin: 40px 0 4px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 18px 0 6px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 13px; }
 .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+@media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
 .card {
   background: var(--surface); border: 1px solid var(--ring);
   border-radius: 10px; padding: 14px 16px 10px;
