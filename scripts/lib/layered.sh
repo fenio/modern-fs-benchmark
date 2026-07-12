@@ -23,6 +23,19 @@ layered_make_dev() {
       # simulate a disk failure by swapping one wrapper to dm-error — the
       # same technique the lvm2 test suite uses (loop detach doesn't work:
       # LVM holds the device open).
+      #
+      # LVM sees the same PV signature through both the wrapper and its
+      # backing loop and rejects them as duplicates — scope scanning to
+      # the wrappers (and the spare, for vgextend during rebuild) via a
+      # private LVM_SYSTEM_DIR so the system config stays untouched.
+      export LVM_SYSTEM_DIR="$DISK_DIR/lvm"
+      mkdir -p "$LVM_SYSTEM_DIR"
+      cat > "$LVM_SYSTEM_DIR/lvm.conf" <<EOF
+devices {
+  global_filter = [ "a|^/dev/mapper/fsbench-pv|", "a|^${SPARE_DEV:-/nonexistent}\$|", "r|.*|" ]
+  use_devicesfile = 0
+}
+EOF
       local i sz
       LVM_PVS=()
       for i in "${!DEVICES[@]}"; do
