@@ -51,6 +51,21 @@ fs_snapshot() {
 fs_setup_compression() { return 1; }
 fs_compress_ratio() { echo null; }
 
+fs_degrade() {
+  case "${LAYOUT:-single}" in
+    md-*)
+      mdadm --fail /dev/md/fsbench "${DEVICES[1]}"
+      mdadm --remove /dev/md/fsbench "${DEVICES[1]}"
+      ;;
+    *) return 1 ;;  # single: nothing to degrade; lvm raid repair: future work
+  esac
+}
+
+fs_rebuild() {
+  mdadm --add /dev/md/fsbench "$SPARE_DEV"
+  mdadm --wait /dev/md/fsbench || true
+}
+
 fs_teardown() {
   umount "$MNT" 2>/dev/null || true
   case "${LAYOUT:-single}" in

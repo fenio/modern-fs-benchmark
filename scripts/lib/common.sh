@@ -26,6 +26,7 @@ COMP_SIZE=${COMP_SIZE:-2G}
 RUNTIME=${RUNTIME:-30}
 
 DEVICES=()
+SPARE_DEV=
 LOOPS_CREATED=0
 
 log() { echo "[$(date -u +%H:%M:%S)] $*" >&2; }
@@ -53,13 +54,19 @@ fs_drop_caches() {
   drop_caches
 }
 
+# Degraded-mode hooks. Backends that support failing a device override
+# these; the default skips the phase.
+fs_degrade() { return 1; }
+fs_rebuild() { return 1; }
+
 # Populate DEVICES[] — real devices from BENCH_DEVICES, or loop devices.
 setup_devices() {
   if [ -n "${BENCH_DEVICES:-}" ]; then
     read -ra DEVICES <<< "$BENCH_DEVICES"
-    log "using real devices: ${DEVICES[*]}"
+    SPARE_DEV=${BENCH_SPARE_DEVICE:-}
+    log "using real devices: ${DEVICES[*]}${SPARE_DEV:+ (spare: $SPARE_DEV)}"
     local dev
-    for dev in "${DEVICES[@]}"; do
+    for dev in "${DEVICES[@]}" ${SPARE_DEV:+"$SPARE_DEV"}; do
       [ -b "$dev" ] || die "$dev is not a block device"
       if grep -q "^$dev " /proc/mounts || lsblk -no MOUNTPOINTS "$dev" | grep -q .; then
         die "$dev (or a partition on it) is mounted — refusing"
@@ -69,18 +76,22 @@ setup_devices() {
       fi
     done
   else
-    log "creating $NDEV loop devices of $DEV_SIZE in $DISK_DIR"
+    log "creating $NDEV loop devices of $DEV_SIZE (+1 spare) in $DISK_DIR"
     mkdir -p "$DISK_DIR"
     LOOPS_CREATED=1
     local i img dev
-    for i in $(seq 0 $((NDEV - 1))); do
+    for i in $(seq 0 "$NDEV"); do
       img="$DISK_DIR/dev$i.img"
       rm -f "$img"
       truncate -s "$DEV_SIZE" "$img"
       dev=$(losetup --find --show "$img")
-      DEVICES+=("$dev")
+      if [ "$i" -lt "$NDEV" ]; then
+        DEVICES+=("$dev")
+      else
+        SPARE_DEV=$dev
+      fi
     done
-    log "loop devices: ${DEVICES[*]}"
+    log "loop devices: ${DEVICES[*]} (spare: $SPARE_DEV)"
   fi
   mkdir -p "$MNT"
 }
@@ -89,7 +100,7 @@ teardown_devices() {
   fs_teardown || true
   if [ "$LOOPS_CREATED" = 1 ]; then
     local dev
-    for dev in "${DEVICES[@]}"; do
+    for dev in "${DEVICES[@]}" ${SPARE_DEV:+"$SPARE_DEV"}; do
       losetup -d "$dev" 2>/dev/null || true
     done
     rm -rf "$DISK_DIR"

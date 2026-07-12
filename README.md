@@ -13,11 +13,17 @@ This suite benchmarks the *machinery*:
 
 | Phase | What it measures |
 |---|---|
+| host calibration | fio on the runner's own disk *before* any filesystem exists — a VM-noise anchor |
 | seq / rand write, rand read | baseline throughput on the chosen redundancy layout |
 | snapshot aging | random-overwrite bandwidth as snapshots accumulate (CoW fragmentation cost) |
 | snapshot create | metadata cost of taking a snapshot |
 | compression | zstd ratio + write throughput on 75%-compressible data |
 | reflink | `cp --reflink=always` of a large file |
+| degraded + rebuild | fail one device: IO while degraded, then time the rebuild onto a spare |
+
+Results are published as a dashboard: **<https://bartosz.fenski.pl/modern-fs-benchmark/>**
+(charts for the latest run, aging curves, and trends across runs; history lives
+on the `results-data` branch).
 
 Default matrix (4 devices, 2-copy redundancy, plus baselines):
 
@@ -42,9 +48,19 @@ plus JSON artifacts.
 
 **Interpret CI numbers carefully.** Runners are shared VMs and all "devices"
 live on one virtual disk, so absolute MB/s is meaningless and RAID striping
-gains are fiction. What *is* meaningful: relative comparisons within a run
-(fs A vs fs B, compression on vs off), behavioral curves (aging degradation,
-cost per snapshot), and regressions of those over kernel versions.
+gains are fiction. Matrix jobs also run in parallel, **each on its own
+ephemeral VM** — so comparing filesystem A against filesystem B compares two
+different machines. Mitigations, from strongest signal to weakest:
+
+1. *Within-job* ratios and shapes (aging curve slope, compression on/off,
+   degraded vs healthy) — same VM, same disk, directly meaningful.
+2. Every job runs a **host calibration** first (fio on the runner's disk,
+   before any filesystem exists); an outlier anchor flags an outlier VM, and
+   cross-job numbers can be normalized against it.
+3. Cross-filesystem deltas within one run — treat small differences (tens of
+   percent) as noise; large ones (2×+) are usually real.
+4. Trends over repeated runs (weekly cron + every push) average the VM
+   lottery out — this is where cross-filesystem conclusions belong.
 
 ### Real hardware
 
@@ -109,6 +125,6 @@ Tuned variants sit next to the defaults in the same matrix (see
 
 - [ ] Kernel matrix: boot mainline kernels in qemu (runners support nested KVM)
       and track behavioral regressions per kernel release
-- [ ] Persist results to a branch + static dashboard charting trends over time
-- [ ] Degraded-mode tests: yank a device, measure degraded mount + rebuild/scrub time
 - [ ] send/receive and device add/remove/rebalance timing
+- [ ] LVM raid repair in the degraded phase; true fail+replace flow for bcachefs
+- [ ] Normalize cross-job comparisons by the calibration anchor in the dashboard

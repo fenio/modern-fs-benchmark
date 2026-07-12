@@ -37,6 +37,26 @@ fs_compress_ratio() {
   fi
 }
 
+# Simulate device loss: unmount, drop one member, remount degraded.
+# Loop-device only — real hardware would need a SCSI/NVMe offline mechanism.
+fs_degrade() {
+  [ "${LAYOUT:-raid1}" != single ] || return 1
+  umount "$MNT"
+  if ! losetup -d "${DEVICES[1]}" 2>/dev/null; then
+    mount -o noatime "${DEVICES[0]}" "$MNT"
+    return 1
+  fi
+  mount -o degraded,noatime "${DEVICES[0]}" "$MNT"
+}
+
+fs_rebuild() {
+  local devid
+  devid=$(btrfs filesystem show "$MNT" \
+    | awk '/devid/ && /MISSING|missing/ {for (i = 1; i <= NF; i++) if ($i == "devid") print $(i+1)}' \
+    | head -1)
+  btrfs replace start -B "${devid:-2}" "$SPARE_DEV" "$MNT"
+}
+
 fs_teardown() {
   umount "$MNT" 2>/dev/null || true
 }

@@ -44,6 +44,15 @@ fs_teardown() {
   zpool destroy -f "$POOL" 2>/dev/null || true
 }
 
+fs_degrade() {
+  zpool offline "$POOL" "${DEVICES[1]}"
+}
+
+fs_rebuild() {
+  zpool replace "$POOL" "${DEVICES[1]}" "$SPARE_DEV"
+  zpool wait -t resilver "$POOL"
+}
+
 # drop_caches does not touch the ARC — export/import the pool for a genuinely
 # cold read cache.
 fs_drop_caches() {

@@ -79,6 +79,19 @@ fs_compress_ratio() {
   fi
 }
 
+# v1 degraded mode: take a member offline (reads/writes continue on the
+# remaining replica), then bring it back and time re-replication. A true
+# fail + replace-with-spare flow is a future refinement.
+fs_degrade() {
+  bcachefs device offline --force "${DEVICES[1]}" 2>/dev/null \
+    || bcachefs device offline "${DEVICES[1]}"
+}
+
+fs_rebuild() {
+  bcachefs device online "${DEVICES[1]}"
+  bcachefs data rereplicate "$MNT"
+}
+
 fs_teardown() {
   umount "$MNT" 2>/dev/null || true
 }

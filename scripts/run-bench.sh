@@ -24,6 +24,22 @@ mkdir -p "$RESULTS_DIR/raw"
 
 setup_devices
 trap teardown_devices EXIT
+
+# --- Phase 0: host calibration --------------------------------------------
+# Same micro-workload on the runner's own disk, before any filesystem is
+# created. Matrix jobs run on separate ephemeral VMs — this anchor makes
+# outlier runners visible and cross-job numbers normalizable.
+log "phase: host calibration"
+mkdir -p "$DISK_DIR"
+out=$(fio_json calib-seqwrite --directory="$DISK_DIR" --rw=write --bs=1M \
+  --size=1G --end_fsync=1)
+CALIB_SEQ_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out")
+out=$(fio_json calib-randwrite --directory="$DISK_DIR" --rw=randwrite --bs=4k \
+  --size=256M --runtime=15 --time_based --fdatasync=16)
+CALIB_RAND_IOPS=$(jq '.jobs[0].write.iops' "$out")
+rm -f "$DISK_DIR"/calib-*.0.0
+log "calibration: seq ${CALIB_SEQ_MBPS%.*} MB/s, rand ${CALIB_RAND_IOPS%.*} IOPS"
+
 fs_setup
 log "$FS ($LAYOUT) mounted at $MNT, data dir $DATA"
 
@@ -99,6 +115,31 @@ if [ "${FS_REFLINK:-0}" = 1 ]; then
   fi
 fi
 
+# --- Phase 7: degraded mode + rebuild --------------------------------------
+DEG_WRITE_IOPS=null
+DEG_READ_IOPS=null
+REBUILD_S=null
+if [ -n "$SPARE_DEV" ] && fs_degrade; then
+  log "phase: degraded IO (one device failed)"
+  out=$(fio_json degraded-randwrite --directory="$DATA" --rw=randwrite \
+    --bs=4k --size=1G --runtime="$RUNTIME" --time_based --fdatasync=16)
+  DEG_WRITE_IOPS=$(jq '.jobs[0].write.iops' "$out")
+  fs_drop_caches || true
+  out=$(fio_json degraded-randread --filename="$DATA/read.dat" --rw=randread \
+    --bs=4k --size="$READ_SIZE" --runtime="$RUNTIME" --time_based)
+  DEG_READ_IOPS=$(jq '.jobs[0].read.iops' "$out")
+  log "phase: rebuild onto spare device"
+  t0=$(now_ms)
+  if fs_rebuild; then
+    REBUILD_S=$(( ($(now_ms) - t0) / 1000 ))
+    log "rebuild finished in ${REBUILD_S}s"
+  else
+    log "rebuild failed"
+  fi
+else
+  log "degraded phase unsupported on $FS ($LAYOUT) — skipping"
+fi
+
 # --- Assemble result -------------------------------------------------------
 AGING_JSON=$(printf '%s\n' "${AGING_BW[@]}" | jq -s '.')
 if [ "${#SNAP_MS[@]}" -gt 0 ]; then
@@ -123,8 +164,15 @@ jq -n \
   --argjson compress_ratio "$COMP_RATIO" \
   --argjson compress_write_mbps "$COMP_MBPS" \
   --argjson reflink_ms "$REFLINK_MS" \
+  --argjson degraded_randwrite_iops "$DEG_WRITE_IOPS" \
+  --argjson degraded_randread_iops "$DEG_READ_IOPS" \
+  --argjson rebuild_s "$REBUILD_S" \
+  --argjson calib_seqwrite_mbps "$CALIB_SEQ_MBPS" \
+  --argjson calib_randwrite_iops "$CALIB_RAND_IOPS" \
   '{fs: $fs, layout: $layout, kernel: $kernel, date: $date,
     devices: $devices, ndev: $ndev,
+    calibration: {seqwrite_mbps: $calib_seqwrite_mbps,
+                  randwrite_iops: $calib_randwrite_iops},
     results: {seqwrite_mbps: $seqwrite_mbps,
               randwrite_iops: $randwrite_iops,
               randread_iops: $randread_iops,
@@ -132,7 +180,10 @@ jq -n \
               snapshot_create_ms: $snapshot_create_ms,
               compress_ratio: $compress_ratio,
               compress_write_mbps: $compress_write_mbps,
-              reflink_ms: $reflink_ms}}' \
+              reflink_ms: $reflink_ms,
+              degraded_randwrite_iops: $degraded_randwrite_iops,
+              degraded_randread_iops: $degraded_randread_iops,
+              rebuild_s: $rebuild_s}}' \
   > "$RESULTS_DIR/result-$BENCH_ID.json"
 
 chmod -R a+rX "$RESULTS_DIR"

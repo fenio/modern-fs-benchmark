@@ -65,3 +65,60 @@ jobs:
           name: results-${{ matrix.fs }}-${{ matrix.layout }}
           path: results/
           if-no-files-found: ignore
+
+  publish:
+    name: Publish dashboard
+    needs: bench
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: results-*
+          path: incoming
+          merge-multiple: true
+
+      - name: Append results to history branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code origin results-data >/dev/null 2>&1; then
+            git fetch origin results-data
+            git worktree add data origin/results-data
+            git -C data checkout -B results-data
+          else
+            git worktree add --detach data
+            git -C data checkout --orphan results-data
+            git -C data rm -rf --quiet . || true
+          fi
+          mkdir -p "data/runs/${{ github.run_number }}"
+          cp incoming/result-*.json "data/runs/${{ github.run_number }}/"
+          git -C data add runs
+          git -C data commit -m "results from run ${{ github.run_id }}" || echo "nothing new"
+          git -C data push origin results-data
+
+      - name: Build dashboard
+        run: |
+          python3 scripts/make-dashboard.py --runs data/runs --out site/index.html \
+            --repo "https://github.com/${{ github.repository }}"
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
