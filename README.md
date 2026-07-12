@@ -22,6 +22,7 @@ This suite benchmarks the *machinery*:
 | compression | zstd ratio + write throughput on 75%-compressible data |
 | reflink | `cp --reflink=always` of a large file |
 | degraded + rebuild | fail one device: IO while degraded, then time the rebuild onto a spare |
+| near-full / ENOSPC | on a fresh small array of the same layout: write throughput at 95% and 99% full, then fill to hard ENOSPC — can you still delete (CoW needs free space to delete), and does deleting make the fs writable again? |
 | corruption + scrub | write 2G of garbage onto one device behind the filesystem's back, scrub, verify the data: CoW filesystems detect and repair from checksums; md/lvm only count mismatches and may silently serve the corrupted copy |
 
 Results are published as a dashboard: **<https://bartosz.fenski.pl/modern-fs-benchmark/>**
@@ -151,8 +152,6 @@ Tuned variants sit next to the defaults in the same matrix (see
 
 CoW-specific phases (the behaviors nothing mainstream benchmarks):
 
-- [ ] **Near-full / ENOSPC behavior**: throughput at 95–99% full, and whether
-      deleting files still works at 100% (CoW needs free space to delete)
 - [ ] **Clone divergence**: first-write-after-reflink/-snapshot cost — the
       unshare penalty; XFS participates, making it integrated-vs-classic
 - [ ] **send/receive**: full + incremental stream throughput (btrfs, ZFS);

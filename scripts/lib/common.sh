@@ -27,6 +27,7 @@ RUNTIME=${RUNTIME:-30}
 
 DEVICES=()
 SPARE_DEV=
+ALL_LOOPS=()
 LOOPS_CREATED=0
 
 log() { echo "[$(date -u +%H:%M:%S)] $*" >&2; }
@@ -98,16 +99,13 @@ setup_devices() {
     log "creating $NDEV loop devices of $DEV_SIZE (+1 spare) in $DISK_DIR"
     mkdir -p "$DISK_DIR"
     LOOPS_CREATED=1
-    local i img dev
+    local i
     for i in $(seq 0 "$NDEV"); do
-      img="$DISK_DIR/dev$i.img"
-      rm -f "$img"
-      truncate -s "$DEV_SIZE" "$img"
-      dev=$(losetup --find --show "$img")
+      make_loop "$DEV_SIZE" "dev$i"
       if [ "$i" -lt "$NDEV" ]; then
-        DEVICES+=("$dev")
+        DEVICES+=("$LOOP_DEV")
       else
-        SPARE_DEV=$dev
+        SPARE_DEV=$LOOP_DEV
       fi
     done
     log "loop devices: ${DEVICES[*]} (spare: $SPARE_DEV)"
@@ -115,11 +113,21 @@ setup_devices() {
   mkdir -p "$MNT"
 }
 
+# Create a loop device; sets LOOP_DEV (no subshell echo — appending to
+# ALL_LOOPS must happen in the caller's shell).
+make_loop() {
+  local img="$DISK_DIR/$2.img"
+  rm -f "$img"
+  truncate -s "$1" "$img"
+  LOOP_DEV=$(losetup --find --show "$img")
+  ALL_LOOPS+=("$LOOP_DEV")
+}
+
 teardown_devices() {
   fs_teardown || true
   if [ "$LOOPS_CREATED" = 1 ]; then
     local dev
-    for dev in "${DEVICES[@]}" ${SPARE_DEV:+"$SPARE_DEV"}; do
+    for dev in "${ALL_LOOPS[@]}"; do
       losetup -d "$dev" 2>/dev/null || true
     done
     rm -rf "$DISK_DIR"

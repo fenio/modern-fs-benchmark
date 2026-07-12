@@ -229,6 +229,88 @@ else
   log "degraded phase unsupported on $FS ($LAYOUT) — skipping"
 fi
 
+# --- Phase 9: near-full / ENOSPC -------------------------------------------
+# On a FRESH small array of the same layout (filling the main 64G-raw
+# arrays would exhaust the runner's own disk): throughput at 95% and 99%
+# full, then fill to ENOSPC and answer the CoW question — can you still
+# delete at 100%, and does deleting actually get you writable space back?
+# Loop-device mode only; skipped on real hardware.
+NEARFULL95_MBPS=null
+NEARFULL99_MBPS=null
+ENOSPC_DELETE_OK=null
+ENOSPC_RECOVER_OK=null
+
+enospc_free() { df -B1 --output=avail "$MNT" | tail -1 | tr -d ' '; }
+
+enospc_fill_to() {  # $1 = stop when free <= this percent of fs size
+  local size target free chunk n=${FILL_N:-0}
+  size=$(df -B1 --output=size "$MNT" | tail -1 | tr -d ' ')
+  target=$(( size * $1 / 100 ))
+  while :; do
+    free=$(enospc_free)
+    [ "$free" -le "$target" ] && { FILL_N=$n; return 0; }
+    chunk=$(( free / 2 / 1048576 ))
+    [ "$chunk" -gt 256 ] && chunk=256
+    [ "$chunk" -lt 8 ] && chunk=8
+    if ! dd if=/dev/urandom of="$DATA/fill.$n" bs=1M count="$chunk" \
+         conv=fsync status=none 2>/dev/null; then
+      FILL_N=$n
+      return 1  # ENOSPC
+    fi
+    n=$((n+1))
+  done
+}
+
+if [ -z "${BENCH_DEVICES:-}" ]; then
+  log "phase: near-full / ENOSPC (fresh 4x${ENOSPC_DEV_SIZE:-2G} $LAYOUT array)"
+  fs_teardown || true
+  DEVICES=()
+  SPARE_DEV=
+  for i in 0 1 2 3; do
+    make_loop "${ENOSPC_DEV_SIZE:-2G}" "enospc$i"
+    DEVICES+=("$LOOP_DEV")
+  done
+  if fs_setup; then
+    FILL_N=0
+    dd if=/dev/urandom of="$DATA/probe.dat" bs=1M count=128 conv=fsync status=none
+    # probes run even if the fill hit ENOSPC early (btrfs df avail
+    # overstates what's allocatable) — a ~0 result is honest data
+    enospc_fill_to 5 || log "hit ENOSPC before the 95% mark (df avail vs allocatable)"
+    out=$(fio_json nearfull95 --filename="$DATA/probe.dat" --rw=randwrite \
+      --bs=4k --size=128M --io_size=64M --end_fsync=1) || true
+    NEARFULL95_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out" 2>/dev/null || echo null)
+    [ -n "$NEARFULL95_MBPS" ] || NEARFULL95_MBPS=null
+    enospc_fill_to 1 || true
+    out=$(fio_json nearfull99 --filename="$DATA/probe.dat" --rw=randwrite \
+      --bs=4k --size=128M --io_size=64M --end_fsync=1) || true
+    NEARFULL99_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out" 2>/dev/null || echo null)
+    [ -n "$NEARFULL99_MBPS" ] || NEARFULL99_MBPS=null
+    enospc_fill_to 0 || true  # push to hard ENOSPC
+    log "ENOSPC reached (free: $(( $(enospc_free) / 1048576 ))M) — delete test"
+    FREE_AT_FULL=$(enospc_free)
+    ENOSPC_DELETE_OK=false
+    if rm -f "$DATA/fill.0" 2>/dev/null; then
+      sync
+      for i in $(seq 1 30); do
+        if [ "$(enospc_free)" -gt $(( FREE_AT_FULL + 8388608 )) ]; then
+          ENOSPC_DELETE_OK=true
+          break
+        fi
+        sleep 1
+      done
+    fi
+    ENOSPC_RECOVER_OK=false
+    if dd if=/dev/urandom of="$DATA/after.dat" bs=1M count=32 \
+         conv=fsync status=none 2>/dev/null; then
+      ENOSPC_RECOVER_OK=true
+    fi
+    log "near-full: 95%=$NEARFULL95_MBPS MB/s, 99%=$NEARFULL99_MBPS MB/s, delete@full=$ENOSPC_DELETE_OK, write-after-delete=$ENOSPC_RECOVER_OK"
+    fs_teardown || true
+  else
+    log "ENOSPC phase: small-array setup failed — skipping"
+  fi
+fi
+
 # --- Assemble result -------------------------------------------------------
 AGING_JSON=$(printf '%s\n' "${AGING_BW[@]}" | jq -s '.')
 if [ "${#SNAP_MS[@]}" -gt 0 ]; then
@@ -262,6 +344,10 @@ jq -n \
   --argjson degraded_randwrite_iops "$DEG_WRITE_IOPS" \
   --argjson degraded_randread_iops "$DEG_READ_IOPS" \
   --argjson rebuild_s "$REBUILD_S" \
+  --argjson nearfull95_write_mbps "$NEARFULL95_MBPS" \
+  --argjson nearfull99_write_mbps "$NEARFULL99_MBPS" \
+  --argjson enospc_delete_ok "$ENOSPC_DELETE_OK" \
+  --argjson enospc_recover_ok "$ENOSPC_RECOVER_OK" \
   --argjson scrub_s "$SCRUB_S" \
   --argjson scrub_found "$SCRUB_FOUND" \
   --argjson scrub_repaired "$SCRUB_REPAIRED" \
@@ -288,6 +374,10 @@ jq -n \
               degraded_randwrite_iops: $degraded_randwrite_iops,
               degraded_randread_iops: $degraded_randread_iops,
               rebuild_s: $rebuild_s,
+              nearfull95_write_mbps: $nearfull95_write_mbps,
+              nearfull99_write_mbps: $nearfull99_write_mbps,
+              enospc_delete_ok: $enospc_delete_ok,
+              enospc_recover_ok: $enospc_recover_ok,
               scrub_s: $scrub_s,
               scrub_found: $scrub_found,
               scrub_repaired: $scrub_repaired,

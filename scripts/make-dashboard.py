@@ -53,6 +53,8 @@ METRICS = [
     ("degraded_randread_iops", "Degraded random read", "IOPS", "higher"),
     ("rebuild_s", "Rebuild after device loss", "s", "lower"),
     ("scrub_s", "Scrub after corruption", "s", "lower"),
+    ("nearfull95_write_mbps", "Write at 95% full", "MB/s", "higher"),
+    ("nearfull99_write_mbps", "Write at 99% full", "MB/s", "higher"),
 ]
 
 
@@ -458,6 +460,10 @@ const cols = [
   {label: "scrub repaired", get: (e, r, c) => r.scrub_repaired},
   {label: "data intact after corruption", str: true,
    get: (e, r, c) => r.data_intact == null ? null : (r.data_intact ? "yes" : "NO")},
+  {label: "delete at 100% full", str: true,
+   get: (e, r, c) => r.enospc_delete_ok == null ? null : (r.enospc_delete_ok ? "yes" : "NO")},
+  {label: "writable after delete", str: true,
+   get: (e, r, c) => r.enospc_recover_ok == null ? null : (r.enospc_recover_ok ? "yes" : "NO")},
   {label: "calib seq", unit: "MB/s", get: (e, r, c) => c.seqwrite_mbps},
   {label: "calib rand", unit: "IOPS", get: (e, r, c) => c.randwrite_iops},
   {label: "tools / module version", str: true, get: (e, r, c) => r.version},
