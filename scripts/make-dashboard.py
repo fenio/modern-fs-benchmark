@@ -39,6 +39,8 @@ ENTITY_ORDER = [
 METRICS = [
     ("seqwrite_mbps", "Sequential write", "MB/s", "higher"),
     ("randwrite_iops", "Random write, 4k + fsync", "IOPS", "higher"),
+    ("fsync_p99_ms", "fsync p99 latency", "ms", "lower"),
+    ("fsync_p999_ms", "fsync p99.9 latency", "ms", "lower"),
     ("randread_iops", "Random read, 4k cold cache", "IOPS", "higher"),
     ("snapshot_create_ms", "Snapshot create", "ms", "lower"),
     ("snapshot_delete_ms", "Snapshot delete (all)", "ms", "lower"),
@@ -147,14 +149,14 @@ TEMPLATE = r"""<!doctype html>
   --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
   /* family slots: ext4, xfs, zfs, btrfs, bcachefs — validated per mode */
-  --s1:#1c5cab; --s2:#3987e5; --s3:#e34948; --s4:#0d8c34;
+  --s1:#1c5cab; --s2:#0891b2; --s3:#e34948; --s4:#0d8c34;
   --s5:#eda100; --s6:#4a3aa7; --s7:#e87ba4; --s8:#eb6834;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --surface: #1a1a19; --page: #0d0d0d;
     --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
-    --s1:#256abf; --s2:#4d92e5; --s3:#e66767; --s4:#0d8c34;
+    --s1:#256abf; --s2:#0da2b8; --s3:#e66767; --s4:#0d8c34;
     --s5:#c98500; --s6:#9085e9; --s7:#d55181; --s8:#d95926;
     --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
   }

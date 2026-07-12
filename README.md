@@ -15,6 +15,7 @@ This suite benchmarks the *machinery*:
 |---|---|
 | host calibration | fio on the runner's own disk *before* any filesystem exists — a VM-noise anchor |
 | seq / rand write, rand read | baseline throughput on the chosen redundancy layout |
+| fsync tail latency | p99 / p99.9 fdatasync completion latency from the random-write phase — CoW transaction commits (ZFS txg, btrfs commit interval) spike periodically in ways the IOPS average hides |
 | snapshot aging | random-overwrite bandwidth as snapshots accumulate (CoW fragmentation cost) — **100 snapshots** where the technology allows; ZFS at 128K recordsize pins ~the whole file per snapshot so its default-recordsize layouts run 10, and old-style LVM snapshots amplify every origin write per snapshot so lvm layouts run 8 (both caps are findings, not shortcuts) |
 | snapshot create | metadata cost of taking a snapshot |
 | snapshot delete + reclaim | delete latency, foreground write bandwidth while background cleaning runs, time until the space actually returns |
@@ -150,9 +151,6 @@ Tuned variants sit next to the defaults in the same matrix (see
 
 CoW-specific phases (the behaviors nothing mainstream benchmarks):
 
-- [ ] **fsync tail latency**: p99/p99.9 completion latency from the existing
-      random-write phase — CoW transaction commits (ZFS txg, btrfs commit
-      interval) cause periodic spikes that averages hide
 - [ ] **Near-full / ENOSPC behavior**: throughput at 95–99% full, and whether
       deleting files still works at 100% (CoW needs free space to delete)
 - [ ] **Clone divergence**: first-write-after-reflink/-snapshot cost — the

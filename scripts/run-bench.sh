@@ -69,6 +69,10 @@ log "phase: random write 4k, ${RUNTIME}s"
 out=$(fio_json randwrite --directory="$DATA" --rw=randwrite --bs=4k \
   --size=1G --runtime="$RUNTIME" --time_based --fdatasync=16)
 RANDWRITE_IOPS=$(jq '.jobs[0].write.iops' "$out")
+# fsync tail latency — CoW transaction commits (ZFS txg, btrfs commit
+# interval) show up as periodic spikes that the IOPS average hides
+FSYNC_P99_MS=$(jq '(.jobs[0].sync.lat_ns.percentile."99.000000" // null) | if . then . / 1000000 else null end' "$out")
+FSYNC_P999_MS=$(jq '(.jobs[0].sync.lat_ns.percentile."99.900000" // null) | if . then . / 1000000 else null end' "$out")
 rm -f "$DATA"/randwrite*
 
 # --- Phase 3: random read (cold cache) ------------------------------------
@@ -244,6 +248,8 @@ jq -n \
   --argjson ndev "${#DEVICES[@]}" \
   --argjson seqwrite_mbps "$SEQWRITE_MBPS" \
   --argjson randwrite_iops "$RANDWRITE_IOPS" \
+  --argjson fsync_p99_ms "$FSYNC_P99_MS" \
+  --argjson fsync_p999_ms "$FSYNC_P999_MS" \
   --argjson randread_iops "$RANDREAD_IOPS" \
   --argjson aging_mbps "$AGING_JSON" \
   --argjson snapshot_create_ms "$SNAP_AVG" \
@@ -268,6 +274,8 @@ jq -n \
                   randwrite_iops: $calib_randwrite_iops},
     results: {seqwrite_mbps: $seqwrite_mbps,
               randwrite_iops: $randwrite_iops,
+              fsync_p99_ms: $fsync_p99_ms,
+              fsync_p999_ms: $fsync_p999_ms,
               randread_iops: $randread_iops,
               aging_mbps: $aging_mbps,
               snapshot_create_ms: $snapshot_create_ms,
