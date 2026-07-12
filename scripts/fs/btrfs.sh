@@ -5,6 +5,14 @@ FS_REFLINK=1
 
 fs_setup() {
   local profile=${LAYOUT:-raid1}
+  case "$profile" in
+    *-luks)
+      # btrfs has no native encryption — dm-crypt under EVERY device is
+      # the only option, so replicated writes are encrypted once per copy
+      profile=${profile%-luks}
+      luks_wrap_devices
+      ;;
+  esac
   if [ "$profile" = single ]; then
     mkfs.btrfs -f "${DEVICES[0]}"
   else
@@ -63,6 +71,17 @@ fs_rebuild() {
 
 fs_teardown() {
   umount "$MNT" 2>/dev/null || true
+}
+
+fs_remount() {
+  umount "$MNT"
+  mount -o noatime "${DEVICES[0]}" "$MNT"
+}
+
+fs_snap_list() { btrfs subvolume list "$MNT" >/dev/null; }
+
+fs_snapscale_delete() {
+  btrfs subvolume delete "$MNT"/scale[0-9]* >/dev/null
 }
 
 fs_scrub() {

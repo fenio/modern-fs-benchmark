@@ -9,6 +9,14 @@ FS_REFLINK=0
 
 fs_setup() {
   layered_make_dev
+  case "${LAYOUT:-single}" in
+    *-luks)
+      # the classic-stack way: assemble the raid FIRST, encrypt ONCE on
+      # top — one dm-crypt layer total, vs one per device for btrfs
+      luks_wrap_top "$LAYERED_DEV"
+      LAYERED_DEV=$LUKS_TOP_DEV
+      ;;
+  esac
   mkfs.ext4 -Fq "$LAYERED_DEV"
   mount -o noatime "$LAYERED_DEV" "$MNT"
   mkdir -p "$MNT/data"
@@ -23,5 +31,9 @@ fs_compress_ratio() { echo null; }
 fs_degrade() { layered_degrade; }
 fs_rebuild() { layered_rebuild; }
 fs_scrub() { layered_scrub; }
-fs_teardown() { layered_teardown; }
+fs_teardown() {
+  umount "$MNT" 2>/dev/null || true
+  luks_close_all
+  layered_teardown
+}
 fs_version() { mke2fs -V 2>&1 | head -1; }

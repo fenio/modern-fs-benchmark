@@ -22,7 +22,8 @@ This suite benchmarks the *machinery*:
 | compression | zstd ratio + write throughput on 75%-compressible data |
 | reflink | `cp --reflink=always` of a large file |
 | degraded + rebuild | fail one device: IO while degraded, then time the rebuild onto a spare |
-| near-full / ENOSPC | on a fresh small array of the same layout: write throughput at 95% and 99% full, then fill to hard ENOSPC — can you still delete (CoW needs free space to delete), and does deleting make the fs writable again? |
+| snapshot-count scaling | 500 snapshots with no churn between them: create latency at the tail, snapshot-list time, remount time, bulk delete (native-snapshot filesystems) |
+| near-full / ENOSPC | on a fresh small array of the same layout: write throughput near 95% and 99% full, then fill to hard ENOSPC — can you still delete (CoW needs free space to delete), and does deleting make the fs writable again? Caveat: btrfs hits its chunk-allocation wall *before* df crosses the target on small devices (1G data chunks are a big fraction of a CI-sized array — on multi-TB disks the same wall sits at 99.9%), so its probes run at the wall; the actual fullness at each probe is recorded in the JSON (`nearfull*_pct`) |
 | corruption + scrub | write 2G of garbage onto one device behind the filesystem's back, scrub, verify the data: CoW filesystems detect and repair from checksums; md/lvm only count mismatches and may silently serve the corrupted copy |
 
 Results are published as a dashboard: **<https://bartosz.fenski.pl/modern-fs-benchmark/>**
@@ -45,6 +46,14 @@ Default matrix (4 devices, 2-copy redundancy, plus baselines):
 - **btrfs / bcachefs / ZFS single-device** — the CoW filesystems without
   redundancy, head-to-head with ext4/xfs single: the pure cost (and features)
   of CoW itself
+- **Encryption variants** — ZFS native per-dataset AES-256-GCM
+  (`mirror-enc`), bcachefs native whole-fs ChaCha20/Poly1305
+  (`replicas2-enc`), btrfs over one LUKS layer *per device*
+  (`raid1-luks` — no native option, so every replica is encrypted
+  separately), and ext4 over a single LUKS layer on top of md
+  (`md-raid10-luks` — the classic stack encrypts once, above the raid).
+  Compression runs on all of them, so encrypt-after-compress vs
+  opaque-blocks falls out of the existing zstd phase
 - **btrfs** — `-d raid1 -m raid1`
 - **ZFS** — striped mirror pairs (raid10-like), at the default 128K recordsize
   and again at `recordsize=8k` — one-variable proof of how much of ZFS's
@@ -156,13 +165,8 @@ CoW-specific phases (the behaviors nothing mainstream benchmarks):
       unshare penalty; XFS participates, making it integrated-vs-classic
 - [ ] **send/receive**: full + incremental stream throughput (btrfs, ZFS);
       rsync over the classic stack as the contrast; bcachefs: not available
-- [ ] **Snapshot-count scaling**: create/mount/df cost at 500+ snapshots
-- [ ] **Encryption variants**: native (ZFS per-dataset AES-GCM, bcachefs
-      whole-fs ChaCha20/Poly1305) vs layered (LUKS/dm-crypt under each
-      device — the only option for btrfs and the classic stack; note
-      multi-device fs over LUKS pays one encryption layer *per device*),
-      plus ext4 fscrypt; measure throughput overhead and the interplay
-      with compression (encrypt-after-compress vs opaque blocks)
+- [ ] **ext4 fscrypt** variant (directory-level encryption — the third model
+      next to native and block-layer)
 
 Infrastructure:
 

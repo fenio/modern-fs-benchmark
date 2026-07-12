@@ -60,6 +60,62 @@ fs_drop_caches() {
 fs_degrade() { return 1; }
 fs_rebuild() { return 1; }
 
+# Wrap every device in DEVICES with LUKS2/dm-crypt (one layer PER DEVICE —
+# what a multi-device filesystem must pay for layered encryption). Mapper
+# names derive from the device basename so re-invocations (ENOSPC phase)
+# don't collide. Closed in teardown_devices.
+luks_wrap_devices() {
+  local keyfile="$DISK_DIR/luks.key" i dev name
+  [ -f "$keyfile" ] || dd if=/dev/urandom of="$keyfile" bs=64 count=1 status=none
+  for i in "${!DEVICES[@]}"; do
+    dev=${DEVICES[i]}
+    name="fsbench-luks-${dev##*/}"
+    cryptsetup luksFormat -q --type luks2 --key-file "$keyfile" "$dev"
+    cryptsetup open --key-file "$keyfile" "$dev" "$name"
+    DEVICES[i]="/dev/mapper/$name"
+  done
+}
+
+# Single LUKS layer on top of an assembled array (the classic-stack way:
+# raid first, encrypt once). Prints nothing; sets LUKS_TOP_DEV.
+luks_wrap_top() {
+  local keyfile="$DISK_DIR/luks.key" name="fsbench-luks-${1##*/}"
+  [ -f "$keyfile" ] || dd if=/dev/urandom of="$keyfile" bs=64 count=1 status=none
+  cryptsetup luksFormat -q --type luks2 --key-file "$keyfile" "$1"
+  cryptsetup open --key-file "$keyfile" "$1" "$name"
+  LUKS_TOP_DEV="/dev/mapper/$name"
+}
+
+luks_close_all() {
+  local m
+  for m in /dev/mapper/fsbench-luks-*; do
+    [ -e "$m" ] && cryptsetup close "${m##*/}" 2>/dev/null || true
+  done
+}
+
+# Overwrite a region of a block device with random bytes (corruption
+# injection). Not dd: uutils dd (Ubuntu 26.04 coreutils) returns spurious
+# ENOSPC when seeking on dm devices.
+corrupt_device() {  # <device> <offset-bytes> <length-bytes>
+  python3 - "$1" "$2" "$3" <<'PY'
+import os, sys
+fd = os.open(sys.argv[1], os.O_WRONLY)
+os.lseek(fd, int(sys.argv[2]), os.SEEK_SET)
+left = int(sys.argv[3])
+while left > 0:
+    n = min(1 << 20, left)
+    os.write(fd, os.urandom(n))
+    left -= n
+os.fsync(fd)
+os.close(fd)
+PY
+}
+
+# Snapshot-scaling hooks (btrfs/zfs/bcachefs override).
+fs_remount() { return 1; }
+fs_snap_list() { return 1; }
+fs_snapscale_delete() { return 1; }  # $1 = count
+
 # Snapshot-reclaim hooks. fs_snapshot_delete_all <count> deletes the aging
 # snapshots (snap1..snapN); fs_free_bytes prints reclaimable free space —
 # df for filesystems, VG free space for LVM (its snapshots live outside
@@ -125,6 +181,7 @@ make_loop() {
 
 teardown_devices() {
   fs_teardown || true
+  luks_close_all
   if [ "$LOOPS_CREATED" = 1 ]; then
     local dev
     for dev in "${ALL_LOOPS[@]}"; do

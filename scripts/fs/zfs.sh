@@ -24,6 +24,14 @@ fs_setup() {
   local extra=()
   case "${LAYOUT:-mirror}" in
     *-8k) extra=(-O recordsize=8k) ;;
+    *-enc)
+      # native per-dataset encryption (AES-256-GCM): encrypt once, then
+      # replicate ciphertext — contrast with per-device LUKS layouts
+      [ -f "$DISK_DIR/zfs.key" ] \
+        || dd if=/dev/urandom of="$DISK_DIR/zfs.key" bs=32 count=1 status=none
+      extra=(-O encryption=on -O keyformat=raw
+             -O "keylocation=file://$DISK_DIR/zfs.key")
+      ;;
   esac
   zpool create -f -O mountpoint="$MNT" -O compression=off -O atime=off \
     "${extra[@]}" "$POOL" "${vdevs[@]}"
@@ -53,6 +61,14 @@ fs_compress_ratio() {
 
 fs_teardown() {
   zpool destroy -f "$POOL" 2>/dev/null || true
+}
+
+fs_remount() { fs_drop_caches; }  # export/import IS the remount for a pool
+
+fs_snap_list() { zfs list -t snapshot >/dev/null; }
+
+fs_snapscale_delete() {
+  zfs destroy "$POOL/data@scale1%scale$1"  # ranged destroy, one call
 }
 
 fs_scrub() {
@@ -92,5 +108,5 @@ fs_drop_caches() {
   drop_caches
   local args=() d
   for d in "${DEVICES[@]}"; do args+=(-d "$d"); done
-  zpool import "${args[@]}" "$POOL"
+  zpool import -l "${args[@]}" "$POOL"  # -l: load encryption keys (no-op otherwise)
 }

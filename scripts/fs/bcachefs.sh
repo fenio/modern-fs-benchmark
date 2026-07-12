@@ -9,11 +9,23 @@ fs_setup() {
   modprobe bcachefs 2>/dev/null || true
   grep -qw bcachefs /proc/filesystems \
     || die "kernel has no bcachefs support (needs DKMS or a custom kernel)"
+  local fmt=(bcachefs format -f)
+  case "${LAYOUT:-replicas2}" in
+    *-enc)
+      # native whole-fs encryption: ChaCha20/Poly1305, authenticated —
+      # checksums become cryptographic MACs
+      [ -f "$DISK_DIR/bcachefs.pass" ] || echo "fsbench-ci-passphrase" > "$DISK_DIR/bcachefs.pass"
+      fmt+=(--encrypted --passphrase_file="$DISK_DIR/bcachefs.pass")
+      ;;
+  esac
   if [ "${LAYOUT:-replicas2}" = single ]; then
-    bcachefs format -f "${DEVICES[0]}"
+    "${fmt[@]}" "${DEVICES[0]}"
     mount -t bcachefs "${DEVICES[0]}" "$MNT"
   else
-    bcachefs format -f --replicas=2 "${DEVICES[@]}"
+    "${fmt[@]}" --replicas=2 "${DEVICES[@]}"
+    case "$LAYOUT" in
+      *-enc) bcachefs unlock --file "$DISK_DIR/bcachefs.pass" "${DEVICES[0]}" ;;
+    esac
     local devlist
     devlist=$(IFS=:; echo "${DEVICES[*]}")
     mount -t bcachefs "$devlist" "$MNT"
@@ -24,6 +36,22 @@ fs_setup() {
 
 fs_snapshot() {
   bcachefs subvolume snapshot "$DATA" "$MNT/$1" >/dev/null
+}
+
+fs_remount() {
+  umount "$MNT"
+  local devlist
+  devlist=$(IFS=:; echo "${DEVICES[*]}")
+  mount -t bcachefs "$devlist" "$MNT"
+}
+
+fs_snap_list() { ls "$MNT" >/dev/null; }
+
+fs_snapscale_delete() {
+  local i
+  for i in $(seq 1 "$1"); do
+    bcachefs subvolume delete "$MNT/scale$i"
+  done
 }
 
 fs_snapshot_delete_all() {

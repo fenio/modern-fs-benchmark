@@ -142,6 +142,51 @@ if [ "$SNAPSHOTS_OK" = 1 ] && [ "${#SNAP_MS[@]}" -gt 0 ]; then
   fi
 fi
 
+# --- Phase 5.5: snapshot-count scaling --------------------------------------
+# How do snapshot operations behave at 500 snapshots (no data churn between
+# them — this isolates metadata scaling from retention cost)? Native-snapshot
+# filesystems only; dm-snapshot can't survive triple digits by design.
+SNAPSCALE_N=null
+SNAPSCALE_CREATE_MS=null
+SNAPSCALE_TOTAL_S=null
+SNAPSCALE_LIST_MS=null
+SNAPSCALE_REMOUNT_S=null
+SNAPSCALE_DELETE_S=null
+case "$FS" in btrfs|zfs|bcachefs)
+  SNAPSCALE_N=${SNAPSCALE_COUNT:-500}
+  log "phase: snapshot-count scaling ($SNAPSCALE_N snapshots)"
+  t0=$(now_ms)
+  TAIL_MS=()
+  for i in $(seq 1 "$SNAPSCALE_N"); do
+    ts=$(now_ms)
+    if ! fs_snapshot "scale$i"; then
+      log "snapshot $i failed — stopping at $((i-1))"
+      SNAPSCALE_N=$((i-1))
+      break
+    fi
+    if [ "$i" -gt $(( ${SNAPSCALE_COUNT:-500} - 20 )) ]; then
+      TAIL_MS+=($(( $(now_ms) - ts )))
+    fi
+  done
+  SNAPSCALE_TOTAL_S=$(( ($(now_ms) - t0) / 1000 ))
+  if [ "${#TAIL_MS[@]}" -gt 0 ]; then
+    SNAPSCALE_CREATE_MS=$(printf '%s\n' "${TAIL_MS[@]}" | jq -s 'sort | .[length/2|floor]')
+  fi
+  if fs_snap_list; then
+    t0=$(now_ms); fs_snap_list; SNAPSCALE_LIST_MS=$(( $(now_ms) - t0 ))
+  fi
+  t0=$(now_ms)
+  if fs_remount; then
+    SNAPSCALE_REMOUNT_S=$(( ($(now_ms) - t0) / 1000 ))
+  fi
+  t0=$(now_ms)
+  if [ "$SNAPSCALE_N" -gt 0 ] && fs_snapscale_delete "$SNAPSCALE_N"; then
+    SNAPSCALE_DELETE_S=$(( ($(now_ms) - t0) / 1000 ))
+  fi
+  log "snapscale: $SNAPSCALE_N snaps in ${SNAPSCALE_TOTAL_S}s, create@tail ${SNAPSCALE_CREATE_MS}ms, list ${SNAPSCALE_LIST_MS}ms, remount ${SNAPSCALE_REMOUNT_S}s, delete ${SNAPSCALE_DELETE_S}s"
+  ;;
+esac
+
 # --- Phase 6: compression (zstd, 75%-compressible data) -------------------
 log "phase: compression"
 COMP_RATIO=null
@@ -182,8 +227,7 @@ if [ "$LAYOUT" != single ] && [ "${#DEVICES[@]}" -ge 3 ]; then
   log "phase: silent corruption (2G of garbage onto ${DEVICES[2]}), then scrub"
   sync
   MD5_BEFORE=$(md5sum "$DATA/read.dat" | cut -d' ' -f1)
-  dd if=/dev/urandom of="${DEVICES[2]}" bs=1M seek=1024 count=2048 \
-    conv=notrunc oflag=direct status=none
+  corrupt_device "${DEVICES[2]}" $(( 1 << 30 )) $(( 2 << 30 ))
   drop_caches
   t0=$(now_ms)
   if counts=$(fs_scrub 2>"$RESULTS_DIR/raw/$BENCH_ID-scrub.log"); then
@@ -237,10 +281,18 @@ fi
 # Loop-device mode only; skipped on real hardware.
 NEARFULL95_MBPS=null
 NEARFULL99_MBPS=null
+NEARFULL95_PCT=null
+NEARFULL99_PCT=null
 ENOSPC_DELETE_OK=null
 ENOSPC_RECOVER_OK=null
 
 enospc_free() { df -B1 --output=avail "$MNT" | tail -1 | tr -d ' '; }
+enospc_pct() {  # actual fullness percent right now
+  local size free
+  size=$(df -B1 --output=size "$MNT" | tail -1 | tr -d ' ')
+  free=$(enospc_free)
+  echo $(( 100 - free * 100 / size ))
+}
 
 enospc_fill_to() {  # $1 = stop when free <= this percent of fs size
   local size target free chunk n=${FILL_N:-0}
@@ -275,12 +327,17 @@ if [ -z "${BENCH_DEVICES:-}" ]; then
     dd if=/dev/urandom of="$DATA/probe.dat" bs=1M count=128 conv=fsync status=none
     # probes run even if the fill hit ENOSPC early (btrfs df avail
     # overstates what's allocatable) — a ~0 result is honest data
+    # btrfs can hit its allocation wall before df crosses the target
+    # (1G chunk granularity on small devices) — the probe then runs AT
+    # the wall; the actual fullness is recorded alongside the number
     enospc_fill_to 5 || log "hit ENOSPC before the 95% mark (df avail vs allocatable)"
+    NEARFULL95_PCT=$(enospc_pct)
     out=$(fio_json nearfull95 --filename="$DATA/probe.dat" --rw=randwrite \
       --bs=4k --size=128M --io_size=64M --end_fsync=1) || true
     NEARFULL95_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out" 2>/dev/null || echo null)
     [ -n "$NEARFULL95_MBPS" ] || NEARFULL95_MBPS=null
     enospc_fill_to 1 || true
+    NEARFULL99_PCT=$(enospc_pct)
     out=$(fio_json nearfull99 --filename="$DATA/probe.dat" --rw=randwrite \
       --bs=4k --size=128M --io_size=64M --end_fsync=1) || true
     NEARFULL99_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out" 2>/dev/null || echo null)
@@ -344,8 +401,16 @@ jq -n \
   --argjson degraded_randwrite_iops "$DEG_WRITE_IOPS" \
   --argjson degraded_randread_iops "$DEG_READ_IOPS" \
   --argjson rebuild_s "$REBUILD_S" \
+  --argjson snapscale_count "$SNAPSCALE_N" \
+  --argjson snapscale_create_ms "$SNAPSCALE_CREATE_MS" \
+  --argjson snapscale_total_s "$SNAPSCALE_TOTAL_S" \
+  --argjson snapscale_list_ms "$SNAPSCALE_LIST_MS" \
+  --argjson snapscale_remount_s "$SNAPSCALE_REMOUNT_S" \
+  --argjson snapscale_delete_s "$SNAPSCALE_DELETE_S" \
   --argjson nearfull95_write_mbps "$NEARFULL95_MBPS" \
   --argjson nearfull99_write_mbps "$NEARFULL99_MBPS" \
+  --argjson nearfull95_pct "$NEARFULL95_PCT" \
+  --argjson nearfull99_pct "$NEARFULL99_PCT" \
   --argjson enospc_delete_ok "$ENOSPC_DELETE_OK" \
   --argjson enospc_recover_ok "$ENOSPC_RECOVER_OK" \
   --argjson scrub_s "$SCRUB_S" \
@@ -374,8 +439,16 @@ jq -n \
               degraded_randwrite_iops: $degraded_randwrite_iops,
               degraded_randread_iops: $degraded_randread_iops,
               rebuild_s: $rebuild_s,
+              snapscale_count: $snapscale_count,
+              snapscale_create_ms: $snapscale_create_ms,
+              snapscale_total_s: $snapscale_total_s,
+              snapscale_list_ms: $snapscale_list_ms,
+              snapscale_remount_s: $snapscale_remount_s,
+              snapscale_delete_s: $snapscale_delete_s,
               nearfull95_write_mbps: $nearfull95_write_mbps,
               nearfull99_write_mbps: $nearfull99_write_mbps,
+              nearfull95_pct: $nearfull95_pct,
+              nearfull99_pct: $nearfull99_pct,
               enospc_delete_ok: $enospc_delete_ok,
               enospc_recover_ok: $enospc_recover_ok,
               scrub_s: $scrub_s,

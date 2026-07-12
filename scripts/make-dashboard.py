@@ -34,6 +34,10 @@ ENTITY_ORDER = [
     "btrfs/single",
     "bcachefs/replicas2",
     "bcachefs/single",
+    "ext4/md-raid10-luks",
+    "zfs/mirror-enc",
+    "btrfs/raid1-luks",
+    "bcachefs/replicas2-enc",
 ]
 
 METRICS = [
@@ -53,8 +57,11 @@ METRICS = [
     ("degraded_randread_iops", "Degraded random read", "IOPS", "higher"),
     ("rebuild_s", "Rebuild after device loss", "s", "lower"),
     ("scrub_s", "Scrub after corruption", "s", "lower"),
-    ("nearfull95_write_mbps", "Write at 95% full", "MB/s", "higher"),
-    ("nearfull99_write_mbps", "Write at 99% full", "MB/s", "higher"),
+    ("nearfull95_write_mbps", "Write near full (95% target)", "MB/s", "higher"),
+    ("nearfull99_write_mbps", "Write near full (99% target)", "MB/s", "higher"),
+    ("snapscale_create_ms", "Snapshot create at 500 snaps", "ms", "lower"),
+    ("snapscale_remount_s", "Remount with 500 snaps", "s", "lower"),
+    ("snapscale_delete_s", "Delete 500 snapshots", "s", "lower"),
 ]
 
 
@@ -226,7 +233,13 @@ svg.key { display: inline-block; width: 20px; height: 10px; flex: none; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 th { color: var(--ink-2); font-weight: 600; }
-th:first-child, td:first-child { text-align: left; }
+th:first-child, td:first-child {
+  text-align: left;
+  /* stay visible while the table scrolls horizontally */
+  position: sticky; left: 0; z-index: 2;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--grid);
+}
 td { font-variant-numeric: tabular-nums; }
 td i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 7px; }
 footer { color: var(--muted); font-size: 12.5px; margin-top: 48px; }
@@ -239,7 +252,7 @@ footer a { color: var(--ink-2); }
 <script>
 const DATA = __DATA__;
 const SLOTS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
-const DASH = ["", "7 4", "2 4"];  // variant within a family: solid/dashed/dotted
+const DASH = ["", "7 4", "2 4", "10 3 2 3"];  // solid/dashed/dotted/dash-dot per family variant
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const color = e => css(SLOTS[e.fi % SLOTS.length]);
 const dash = e => DASH[e.vi % DASH.length];
