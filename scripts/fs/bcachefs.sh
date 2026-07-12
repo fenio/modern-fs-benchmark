@@ -79,9 +79,13 @@ fs_compress_ratio() {
   fi
 }
 
-# v1 degraded mode: take a member offline (reads/writes continue on the
-# remaining replica), then bring it back and time re-replication. A true
-# fail + replace-with-spare flow is a future refinement.
+# Degraded mode: take a member offline. With 4 devices and replicas=2
+# nothing is left under-replicated by new writes — they simply avoid the
+# missing device — so a rejoin has no catch-up to measure (verified: an
+# online + reconcile wait returns instantly). The measurable rebuild,
+# matching btrfs replace / zpool replace, is relocating everything the
+# lost device held: add the spare, then evacuate the device — which
+# blocks until it holds zero data.
 fs_degrade() {
   bcachefs device offline --force "${DEVICES[1]}" 2>/dev/null \
     || bcachefs device offline "${DEVICES[1]}"
@@ -89,13 +93,8 @@ fs_degrade() {
 
 fs_rebuild() {
   bcachefs device online "${DEVICES[1]}"
-  # The reconcile scan is scheduled asynchronously after a rejoin — an
-  # immediate wait returns before any work is queued (measured 0s). Give
-  # the scan a moment to queue; the 5s settle is included in rebuild_s.
-  sleep 5
-  # "data rereplicate" is the pre-reconcile fallback
-  bcachefs reconcile wait "$MNT" 2>/dev/null \
-    || bcachefs data rereplicate "$MNT"
+  bcachefs device add "$MNT" "$SPARE_DEV"
+  bcachefs device evacuate "${DEVICES[1]}"
 }
 
 fs_teardown() {
