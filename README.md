@@ -2,8 +2,11 @@
 
 Continuous benchmarks for **multi-device, copy-on-write filesystems** — btrfs,
 ZFS, bcachefs — measuring the things single-device ext4-style benchmarks
-(Phoronix et al.) never touch: redundancy layouts, snapshots, CoW aging,
-transparent compression, and reflinks.
+(Phoronix et al.) never touch: redundancy layouts, snapshot aging and scaling,
+transparent compression, encryption (native vs LUKS), reflinks, fsync tail
+latency, degraded operation and rebuild, corruption self-healing, and
+near-full/ENOSPC behavior — with ext4/xfs over md/LVM as the classic-stack
+baselines.
 
 ## Why
 
@@ -28,15 +31,18 @@ This suite benchmarks the *machinery*:
 | corruption + scrub | write 2G of garbage onto one device behind the filesystem's back, scrub, verify the data: CoW filesystems detect and repair from checksums; md/lvm only count mismatches and may silently serve the corrupted copy |
 
 Results are published as a dashboard: **<https://bartosz.fenski.pl/modern-fs-benchmark/>**
-(charts for the latest run, aging curves, and trends across runs; history lives
-on the `results-data` branch).
+— per-metric charts sorted best-first, aging curves, and trends across runs,
+filterable by filesystem family and layout class (e.g. "btrfs vs bcachefs,
+multi-device only"), with linear/log scale switching and a sortable table.
+Run history lives on the `results-data` branch.
 
 Every result records the exact tools *and kernel-module* versions tested —
 essential for ZFS and bcachefs, which are out-of-tree, where the kernel
 version alone doesn't identify what actually ran. Shown in the dashboard
 table, stored in the JSON.
 
-Default matrix (4 devices, 2-copy redundancy, plus baselines):
+Default matrix — 17 configurations (4 devices, 2-copy redundancy, plus
+baselines):
 
 - **ext4 single** — one device, the "what does any of this cost" anchor
 - **ext4 on md raid10** — the classic layered stack
@@ -130,15 +136,22 @@ scripts/summarize.sh results/result-*.json
 ## Layout
 
 ```
-scripts/run-bench.sh      orchestrates the phases, emits results/result-<fs>-<layout>.json
-scripts/lib/common.sh     device layer (loop files or BENCH_DEVICES), fio helpers
-scripts/fs/<fs>.sh        per-filesystem backend: mkfs/mount, snapshot, compression, teardown
-scripts/install-deps.sh   Debian/Ubuntu package setup per filesystem
-scripts/summarize.sh      JSON results → markdown table
+scripts/run-bench.sh       orchestrates the phases, emits results/result-<fs>-<layout>.json
+scripts/lib/common.sh      device layer (loop files or BENCH_DEVICES), LUKS helpers,
+                           corruption injection, fio helpers, default fs hooks
+scripts/lib/layered.sh     shared md/LVM assembly, snapshots, degrade/repair (ext4 + xfs)
+scripts/fs/<fs>.sh         per-filesystem backend
+scripts/install-deps.sh    Debian/Ubuntu package setup per filesystem
+scripts/summarize.sh       JSON results → markdown table (job summaries)
+scripts/make-dashboard.py  results history → the static dashboard page
 ```
 
 Adding a filesystem = one file in `scripts/fs/` implementing `fs_setup`,
-`fs_snapshot`, `fs_setup_compression`, `fs_compress_ratio`, `fs_teardown`.
+`fs_snapshot`, and `fs_teardown`; everything else (`fs_setup_compression`,
+`fs_compress_ratio`, `fs_snapshot_delete_all`, `fs_remount`, `fs_snap_list`,
+`fs_snapscale_delete`, `fs_degrade`, `fs_rebuild`, `fs_scrub`, `fs_version`,
+`fs_drop_caches`, `fs_free_bytes`) has safe defaults in `lib/common.sh` and is
+optional — unimplemented hooks simply record null for their metrics.
 
 ## Ideas, hints, and requests welcome
 
