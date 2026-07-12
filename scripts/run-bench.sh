@@ -188,6 +188,9 @@ case "$FS" in btrfs|zfs|bcachefs)
   if fs_remount; then
     SNAPSCALE_REMOUNT_MS=$(( $(now_ms) - t0 ))
   fi
+  # a failed remount must not let later phases silently benchmark the
+  # bare mountpoint directory on the runner's root filesystem
+  mountpoint -q "$MNT" || die "filesystem lost after remount attempt"
   t0=$(now_ms)
   if [ "$SNAPSCALE_N" -gt 0 ] && fs_snapscale_delete "$SNAPSCALE_N"; then
     SNAPSCALE_DELETE_MS=$(( $(now_ms) - t0 ))
