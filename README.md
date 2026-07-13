@@ -147,6 +147,9 @@ scripts/fs/<fs>.sh         per-filesystem backend
 scripts/install-deps.sh    Debian/Ubuntu package setup per filesystem
 scripts/summarize.sh       JSON results → markdown table (job summaries)
 scripts/make-dashboard.py  results history → the static dashboard page
+scripts/audit-results.py   anomaly scan over the results history — impossible
+                           orderings, self-healing failures, ENOSPC regressions,
+                           unexpected nulls (daily via the results-audit workflow)
 ```
 
 Adding a filesystem = one file in `scripts/fs/` implementing `fs_setup`,

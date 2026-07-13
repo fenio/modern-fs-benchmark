@@ -1,0 +1,30 @@
+name: results-audit
+
+# Daily sanity scan of the accumulated results history: impossible
+# orderings, self-healing failures, ENOSPC regressions, unexpected nulls
+# (hard = red run), plus variance/flapping warnings in the job summary.
+
+on:
+  schedule:
+    - cron: '47 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fetch results history
+        run: |
+          git fetch origin results-data
+          git worktree add data origin/results-data
+
+      - name: Audit results
+        run: |
+          set -o pipefail
+          python3 scripts/audit-results.py data/runs | tee -a "$GITHUB_STEP_SUMMARY"
