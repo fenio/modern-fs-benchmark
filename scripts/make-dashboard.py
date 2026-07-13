@@ -12,6 +12,7 @@ import argparse
 import glob
 import json
 import os
+import statistics
 import sys
 
 # Composite encoding: hue follows the filesystem FAMILY (a fixed categorical
@@ -302,6 +303,36 @@ def load_runs(runs_dir):
     return runs
 
 
+def collapse_old(runs, keep):
+    """Keep the newest `keep` runs raw; collapse older ones to one synthetic
+    run per day holding per-metric medians. Full history stays on the
+    results-data branch — this only bounds what the page embeds/draws."""
+    if len(runs) <= keep:
+        return runs
+    old, recent = runs[:-keep], runs[-keep:]
+    days = {}
+    for r in old:
+        days.setdefault((r["date"] or "?")[:10], []).append(r)
+    agg = []
+    for day, group in sorted(days.items()):
+        results = {}
+        for e in sorted({e for r in group for e in r["results"]}):
+            merged = {}
+            for k in sorted({k for r in group for k in r["results"].get(e, {})}):
+                vals = [r["results"][e][k] for r in group
+                        if isinstance(r["results"].get(e, {}).get(k), (int, float))
+                        and not isinstance(r["results"][e][k], bool)]
+                if vals:
+                    merged[k] = statistics.median(vals)
+            results[e] = merged
+        agg.append({"id": "day-" + day,
+                    "date": max(r["date"] for r in group),
+                    "kernel": group[-1]["kernel"],
+                    "results": results,
+                    "agg": True})
+    return agg + recent
+
+
 def entity_list(runs):
     seen = {e for r in runs for e in r["results"]}
     ordered = [e for e in ENTITY_ORDER if e in seen]
@@ -326,9 +357,11 @@ def main():
     ap.add_argument("--runs", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--repo", default="https://github.com/fenio/modern-fs-benchmark")
+    ap.add_argument("--window", type=int, default=100,
+                    help="newest runs kept raw; older collapsed to daily medians")
     args = ap.parse_args()
 
-    runs = load_runs(args.runs)
+    runs = collapse_old(load_runs(args.runs), args.window)
     if not runs:
         print(f"no result JSON found under {args.runs}", file=sys.stderr)
         sys.exit(1)
@@ -864,7 +897,8 @@ function rebuild() {
     content.appendChild(el("p", {class: "note"},
       "Recorded once — trend lines appear as more runs accumulate (2-hourly cron + every push)."));
   } else {
-    content.appendChild(el("p", {class: "note"}, "One card per metric, one point per run."));
+    content.appendChild(el("p", {class: "note"},
+      "One card per metric, one point per run — the newest 100 runs individually, older runs collapsed to daily medians (full history lives on the results-data branch)."));
     const tgrid = el("div", {class: "grid"});
     const xl = DATA.runs.map(r => (r.date || "").slice(5, 10) || r.id);
     DATA.metrics.forEach(m => {
