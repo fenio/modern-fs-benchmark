@@ -192,7 +192,10 @@ DOCS = {
         "Wall time to restore full redundancy onto a spare device: zpool replace + resilver "
         "wait, mdadm --add + --wait (full-member resync), btrfs replace -B, bcachefs device "
         "add + evacuate (blocks until the lost device holds zero data), lvconvert --repair + "
-        "sync_percent polling. Phase 7.",
+        "sync_percent polling. The CoW filesystems move only their share of the LIVE data "
+        "(~8G logical in CI by this phase), so on identical loop devices they converge to "
+        "similar times — md resyncs the full member regardless of contents, which is the "
+        "spread to look at. Phase 7.",
         [("run-bench.sh (Phase 7)", "scripts/run-bench.sh"),
          ("fs_rebuild per backend", "scripts/fs"),
          ("layered_rebuild (md/lvm)", "scripts/lib/layered.sh")]),
