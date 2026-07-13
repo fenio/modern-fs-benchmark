@@ -188,4 +188,8 @@ Infrastructure:
 - [ ] Kernel matrix: boot mainline kernels in qemu (runners support nested KVM)
       and track behavioral regressions per kernel release
 - [ ] Device add/remove/rebalance timing
+- [ ] btrfs/raid1-luks degraded phase (loop-detach can't fail a dm-crypt
+      mapper — needs the dm-error wrapper trick the lvm layouts use)
+- [ ] Parse bcachefs scrub found/repaired counts (verdict via md5 works;
+      the counts aren't in 1.38-tools output)
 - [ ] Normalize cross-job comparisons by the calibration anchor in the dashboard

@@ -80,8 +80,11 @@ log "phase: random read 4k, ${RUNTIME}s"
 fio --name=readprep --filename="$DATA/read.dat" --rw=write --bs=1M \
   --size="$READ_SIZE" --end_fsync=1 --output=/dev/null
 fs_drop_caches
+# single pass over distinct blocks (fio's random map forbids repeats):
+# a time-based run loops back over cached blocks and blends cold reads
+# with page-cache hits — observed 4.7x run-to-run swings
 out=$(fio_json randread --filename="$DATA/read.dat" --rw=randread --bs=4k \
-  --size="$READ_SIZE" --runtime="$RUNTIME" --time_based)
+  --size="$READ_SIZE" --io_size=512M)
 RANDREAD_IOPS=$(jq '.jobs[0].read.iops' "$out")
 # Parallel readers: a mirror can only serve reads from both copies when
 # there IS concurrency — a single dependent-read stream can't show it.
@@ -89,8 +92,7 @@ RANDREAD_IOPS=$(jq '.jobs[0].read.iops' "$out")
 # this measurement earns its keep on real hardware.)
 fs_drop_caches
 out=$(fio_json randread-par --filename="$DATA/read.dat" --rw=randread --bs=4k \
-  --size="$READ_SIZE" --runtime="$RUNTIME" --time_based --numjobs=4 \
-  --group_reporting)
+  --size="$READ_SIZE" --io_size=128M --numjobs=4 --group_reporting)
 RANDREAD4_IOPS=$(jq '.jobs[0].read.iops' "$out")
 
 # --- Phase 3.4: sequential read (cold cache) --------------------------------

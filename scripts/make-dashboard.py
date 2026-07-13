@@ -64,13 +64,14 @@ DOCS = {
         "tail. zfs mirror-8k famously posts great IOPS and p99 while this explodes to ~180ms.",
         [("run-bench.sh (Phase 2)", "scripts/run-bench.sh")]),
     "randread_iops": (
-        "fio random 4k reads over a 2G file for 30s, single thread, after a cold-cache "
-        "barrier (page cache dropped; ZFS pools are export/imported because drop_caches "
-        "does not touch the ARC). Phase 3.",
+        "fio random 4k reads over a 2G file, single thread, single pass over 512M of "
+        "distinct blocks (no repeats — a time-based loop would blend cold reads with cache "
+        "hits), after a cold-cache barrier (page cache dropped; ZFS pools export/imported "
+        "because drop_caches does not touch the ARC). Phase 3.",
         [("run-bench.sh (Phase 3)", "scripts/run-bench.sh"),
          ("fs_drop_caches overrides", "scripts/fs/zfs.sh")]),
     "randread4_iops": (
-        "Same cold-cache random read with --numjobs=4 --group_reporting. A mirror can only "
+        "Same cold-cache single-pass random read with --numjobs=4 (128M each). A mirror can only "
         "serve reads from both copies under concurrency — a single dependent-read stream "
         "cannot show replica read-scaling. On CI loop devices all replicas share one "
         "physical disk, so the bandwidth win only appears on real hardware.",
@@ -181,7 +182,9 @@ DOCS = {
     "degraded_randwrite_iops": (
         "One device is failed (zpool offline / mdadm --fail / loop-detach + degraded mount "
         "for btrfs / bcachefs device offline / dm-error under one LVM PV), then the Phase 2 "
-        "random-write workload runs on the degraded array. Phase 7.",
+        "random-write workload runs on the degraded array. This can legitimately EXCEED the "
+        "healthy Phase-2 number: a degraded mirror skips writes to the missing member, and "
+        "the two phases also run at different filesystem ages. Phase 7.",
         [("run-bench.sh (Phase 7)", "scripts/run-bench.sh"),
          ("fs_degrade per backend", "scripts/fs"),
          ("layered_degrade (md/lvm)", "scripts/lib/layered.sh")]),
@@ -206,7 +209,11 @@ DOCS = {
         "scrub, md/lvm sync-action 'check' (which can only COUNT mismatches — no checksums "
         "to know which copy is right). Runs after the rebuild, so it validates that too. "
         "The data-intact verdict in the table is the md5 of a 2G test file before vs after. "
-        "Phase 8.",
+        "Found/repaired counts are in per-filesystem units (blocks, records, sectors — "
+        "zfs-8k counts ~16x more records than default zfs for the same damage) and vary "
+        "with how much allocated data the corruption window happens to overlap. On md/lvm "
+        "the verdict is probabilistic: reads round-robin between legs, so a lucky run can "
+        "read everything from the good copy and report intact. Phase 8.",
         [("run-bench.sh (Phase 8)", "scripts/run-bench.sh"),
          ("fs_scrub per backend", "scripts/fs"),
          ("corrupt_device", "scripts/lib/common.sh")]),
