@@ -78,7 +78,7 @@ DOCS = {
         "physical disk, so the bandwidth win only appears on real hardware.",
         [("run-bench.sh (Phase 3)", "scripts/run-bench.sh")]),
     "seqread_mbps": (
-        "fio sequential 1M reads over the 2G file for 30s, cold cache. Phase 3.4.",
+        "fio sequential 1M reads over the 2G file, one full pass (no looping — a time-based run re-reads cached blocks and reports RAM speed), cold cache. Phase 3.4.",
         [("run-bench.sh (Phase 3.4)", "scripts/run-bench.sh")]),
     "lat_idle_p99_ms": (
         "A trivial operation — one 4k write + fsync every 200ms (like a shell appending "

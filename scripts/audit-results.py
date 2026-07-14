@@ -36,6 +36,7 @@ NOISY = {
     "snapscale_remount_ms", "snapscale_list_ms", "snapscale_delete_ms",
     "smalltree_create_ms",  # metadata-heavy create is cache/VM sensitive
     "lat_load_ops",
+    "snapshot_create_ms",  # taken mid-aging under IO; txg/commit timing dependent
 }
 
 
@@ -126,6 +127,9 @@ def main():
         # window — a legitimate outcome, warn instead of fail)
         for k, v in res.items():
             if v is None and not null_ok(ent, k):
+                if k == "lat_load_p99_ms" and isinstance(res.get("lat_load_ops"), (int, float)) \
+                        and res["lat_load_ops"] < 20:
+                    continue  # withheld by design below the 20-sample floor
                 if k == "reclaim_s":
                     warn.append(f"{ent}: reclaim did not finish within 300s")
                 else:

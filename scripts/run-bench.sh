@@ -97,8 +97,10 @@ RANDREAD4_IOPS=$(jq '.jobs[0].read.iops' "$out")
 
 # --- Phase 3.4: sequential read (cold cache) --------------------------------
 fs_drop_caches
+# one pass over the whole file — a time-based loop re-reads cached
+# blocks and reports RAM speed (same flaw the random reads had)
 out=$(fio_json seqread --filename="$DATA/read.dat" --rw=read --bs=1M \
-  --size="$READ_SIZE" --runtime="$RUNTIME" --time_based)
+  --size="$READ_SIZE")
 SEQREAD_MBPS=$(jq '.jobs[0].read.bw_bytes / 1048576' "$out")
 
 # --- Phase 3.5: trivial-op latency, idle vs under streaming write -----------
