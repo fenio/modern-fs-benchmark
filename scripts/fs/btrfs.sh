@@ -14,7 +14,10 @@ fs_setup() {
       ;;
   esac
   if [ "$profile" = single ]; then
-    mkfs.btrfs -f "${DEVICES[0]}"
+    # -m single: the default DUP metadata would double metadata writes
+    # vs the other single-device filesystems (thanks to the Reddit
+    # reviewer who caught this)
+    mkfs.btrfs -f -d single -m single "${DEVICES[0]}"
   else
     mkfs.btrfs -f -d "$profile" -m "$profile" "${DEVICES[@]}"
   fi

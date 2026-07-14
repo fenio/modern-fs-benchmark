@@ -55,7 +55,9 @@ baselines):
   XFS additionally has reflink, unlike ext4
 - **btrfs / bcachefs / ZFS single-device** — the CoW filesystems without
   redundancy, head-to-head with ext4/xfs single: the pure cost (and features)
-  of CoW itself
+  of CoW itself. btrfs uses `-m single`: mkfs defaults to DUP metadata on a
+  single device, which would double its metadata writes vs every other
+  single-device row (community catch)
 - **Encryption variants** — ZFS native per-dataset AES-256-GCM
   (`mirror-enc`), bcachefs native whole-fs ChaCha20/Poly1305
   (`replicas2-enc`), btrfs over one LUKS layer *per device*
