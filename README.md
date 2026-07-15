@@ -199,6 +199,16 @@ CoW-specific phases (the behaviors nothing mainstream benchmarks):
 - [ ] **Partial device loss**: device disappears briefly and returns — md
       write-intent bitmaps, ZFS delta resilver, bcachefs journal catch-up;
       a different (and common) recovery scenario than full-device rebuild
+- [ ] **lvm-thin layouts**: our lvm rows use old-style snapshots, which are
+      the known-bad strawman — thin pools are what modern LVM users run, with
+      proper CoW snapshots that should survive the aging and snapshot-scaling
+      phases at full count. Next up.
+- [ ] **"The Tower"**: ext4/xfs on lvm-thin on dm-vdo on LUKS on raid on
+      dm-integrity — the full feature-parity classic stack (checksums +
+      redundancy + encryption + compression/dedup + CoW snapshots from five
+      dm layers), versus the integrated filesystems that do it in one.
+      Requested with a 😜 but taken seriously: dm-vdo is mainline since 6.9
+      and thin-on-VDO is a documented configuration.
 - [ ] **Stratis** (XFS on dm-thin/dm-integrity/dm-crypt, managed) — arguably
       the closest classic-stack analogue to btrfs (community suggestion)
 - [ ] **ext4 fscrypt** variant (directory-level encryption — the third model
