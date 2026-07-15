@@ -128,6 +128,22 @@ DOCS = {
     "smalltree_rm_ms": (
         "rm -rf of the copied 20k-file tree, plus sync. Phase 3.6.",
         [("run-bench.sh (Phase 3.6)", "scripts/run-bench.sh")]),
+    "sparse_create_ms": (
+        "ftruncate an empty file to 1GiB + fsync — sparse file creation should be a "
+        "metadata-only operation. Time here, allocated bytes (st_blocks) in the next "
+        "card: together they answer 'is sparse actually sparse'. Community request. "
+        "Phase 3.7.",
+        [("run-bench.sh (Phase 3.7)", "scripts/run-bench.sh")]),
+    "sparse_create_bytes": (
+        "st_blocks x 512 for the freshly-truncated 1GiB empty file — bytes a supposedly "
+        "hole-only file actually occupies (metadata/indirect blocks show up here on some "
+        "filesystems). Phase 3.7.",
+        [("run-bench.sh (Phase 3.7)", "scripts/run-bench.sh")]),
+    "sparse_grow_ms": (
+        "A 256MiB fully-written file is ftruncated to 512MiB (+fsync) — growing a file "
+        "over a new hole; the JSON also records sparse_grow_bytes, the allocation delta "
+        "(expected ~0). Phase 3.7.",
+        [("run-bench.sh (Phase 3.7)", "scripts/run-bench.sh")]),
     "aging_mbps": (
         "The aging curve: a 2G file is overwritten with 64M of random 4k writes per "
         "iteration, a snapshot taken before each; per-iteration bandwidth is the curve. 100 "
@@ -279,6 +295,9 @@ METRICS = [
     ("smalltree_create_ms", "Create 20k-file tree", "ms", "lower"),
     ("smalltree_cp_ms", "cp -r 20k-file tree, cold", "ms", "lower"),
     ("smalltree_rm_ms", "rm -rf 20k-file tree", "ms", "lower"),
+    ("sparse_create_ms", "ftruncate empty file to 1G", "ms", "lower"),
+    ("sparse_create_bytes", "Bytes allocated for sparse 1G", "B", "lower"),
+    ("sparse_grow_ms", "ftruncate 256M file to 512M", "ms", "lower"),
     ("snapshot_create_ms", "Snapshot create", "ms", "lower"),
     ("snapshot_delete_ms", "Snapshot delete (all)", "ms", "lower"),
     ("reclaim_s", "Space reclaim after delete", "s", "lower"),

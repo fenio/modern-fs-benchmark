@@ -159,6 +159,51 @@ SMALLTREE_RM_MS=$(( $(now_ms) - t0 ))
 rm -rf "$DATA/tree"
 log "source tree: create ${SMALLTREE_CREATE_MS}ms, cp -r ${SMALLTREE_CP_MS}ms, rm -rf ${SMALLTREE_RM_MS}ms"
 
+# --- Phase 3.7: sparse file ops (ftruncate) ---------------------------------
+# Community request: is sparse actually sparse, and what does growing a
+# file cost? (a) ftruncate an empty file to 1GiB — time + allocated
+# bytes; (b) double a written 256MiB file — time + allocation delta.
+log "phase: sparse file ops (ftruncate)"
+SPARSE_JSON=$(python3 - "$DATA" <<'PY'
+import json, os, sys, time
+base = sys.argv[1]
+def blocks(p):
+    os.sync()
+    return os.stat(p).st_blocks * 512
+r = {}
+p1 = os.path.join(base, "sparse1.dat")
+fd = os.open(p1, os.O_WRONLY | os.O_CREAT)
+t = time.perf_counter()
+os.ftruncate(fd, 1 << 30)
+os.fsync(fd)
+r["sparse_create_ms"] = round((time.perf_counter() - t) * 1000, 3)
+os.close(fd)
+r["sparse_create_bytes"] = blocks(p1)
+p2 = os.path.join(base, "sparse2.dat")
+with open(p2, "wb") as f:
+    for _ in range(256):
+        f.write(os.urandom(1 << 20))
+    f.flush()
+    os.fsync(f.fileno())
+before = blocks(p2)
+fd = os.open(p2, os.O_WRONLY)
+t = time.perf_counter()
+os.ftruncate(fd, 512 << 20)
+os.fsync(fd)
+r["sparse_grow_ms"] = round((time.perf_counter() - t) * 1000, 3)
+os.close(fd)
+r["sparse_grow_bytes"] = max(0, blocks(p2) - before)
+os.remove(p1)
+os.remove(p2)
+print(json.dumps(r))
+PY
+)
+SPARSE_CREATE_MS=$(jq '.sparse_create_ms' <<<"$SPARSE_JSON")
+SPARSE_CREATE_BYTES=$(jq '.sparse_create_bytes' <<<"$SPARSE_JSON")
+SPARSE_GROW_MS=$(jq '.sparse_grow_ms' <<<"$SPARSE_JSON")
+SPARSE_GROW_BYTES=$(jq '.sparse_grow_bytes' <<<"$SPARSE_JSON")
+log "sparse: 1G create ${SPARSE_CREATE_MS}ms/${SPARSE_CREATE_BYTES}B allocated, grow 256M->512M ${SPARSE_GROW_MS}ms/+${SPARSE_GROW_BYTES}B"
+
 # --- Phase 4: CoW aging — overwrite under a growing pile of snapshots -----
 log "phase: aging, $AGING_ITERS iterations of snapshot + $AGING_IO overwrite"
 fio --name=agingprep --filename="$DATA/aging.dat" --rw=write --bs=1M \
@@ -532,6 +577,10 @@ jq -n \
   --argjson reclaim_write_mbps "$RECLAIM_WRITE_MBPS" \
   --argjson compress_ratio "$COMP_RATIO" \
   --argjson compress_write_mbps "$COMP_MBPS" \
+  --argjson sparse_create_ms "$SPARSE_CREATE_MS" \
+  --argjson sparse_create_bytes "$SPARSE_CREATE_BYTES" \
+  --argjson sparse_grow_ms "$SPARSE_GROW_MS" \
+  --argjson sparse_grow_bytes "$SPARSE_GROW_BYTES" \
   --argjson reflink_ms "$REFLINK_MS" \
   --argjson reflink_fiemap_shared "$REFLINK_FIEMAP_SHARED" \
   --argjson divergence_plain_mbps "$DIV_PLAIN_MBPS" \
@@ -583,6 +632,10 @@ jq -n \
               reclaim_write_mbps: $reclaim_write_mbps,
               compress_ratio: $compress_ratio,
               compress_write_mbps: $compress_write_mbps,
+              sparse_create_ms: $sparse_create_ms,
+              sparse_create_bytes: $sparse_create_bytes,
+              sparse_grow_ms: $sparse_grow_ms,
+              sparse_grow_bytes: $sparse_grow_bytes,
               reflink_ms: $reflink_ms,
               reflink_fiemap_shared: $reflink_fiemap_shared,
               divergence_plain_mbps: $divergence_plain_mbps,
