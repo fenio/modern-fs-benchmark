@@ -39,6 +39,7 @@ ENTITY_ORDER = [
     "btrfs/raid6",
     "bcachefs/replicas2",
     "bcachefs/single",
+    "bcachefs/ec",
     "ext4/md-raid10-luks",
     "ext4/md-raid6",
     "zfs/mirror-enc",

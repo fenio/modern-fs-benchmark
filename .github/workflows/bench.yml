@@ -79,6 +79,8 @@ jobs:
             layout: replicas2
           - fs: bcachefs
             layout: single
+          - fs: bcachefs
+            layout: ec
           # encryption variants: native vs one-LUKS-per-device vs LUKS-over-raid
           - fs: zfs
             layout: mirror-enc

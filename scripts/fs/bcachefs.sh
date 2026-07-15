@@ -20,6 +20,12 @@ fs_setup() {
   esac
   if [ "${LAYOUT:-replicas2}" = single ]; then
     "${fmt[@]}" "${DEVICES[0]}"
+  elif [ "${LAYOUT:-replicas2}" = ec ]; then
+    # erasure coding, stable since 1.37 (thanks r/bcachefs for the
+    # correction): Reed-Solomon stripes, write-hole-free by design —
+    # new writes replicate first, background reconcile stripes them.
+    # replicas=3 tolerates two failures: the raid6-class peer.
+    "${fmt[@]}" --erasure_code --replicas=3 "${DEVICES[@]}"
   else
     "${fmt[@]}" --replicas=2 "${DEVICES[@]}"
   fi

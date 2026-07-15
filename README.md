@@ -67,9 +67,10 @@ Default matrix — 22 configurations (4 devices, plus baselines):
   opaque-blocks falls out of the existing zstd phase
 - **btrfs** — `-d raid1 -m raid1`
 - **Dual-parity (raid6-class)** — zfs `raidz2`, btrfs `-d raid6 -m raid1c3`
-  (parity metadata is discouraged — write hole), ext4 on md raid6.
-  bcachefs erasure coding is still experimental and not run — that hole is
-  itself a datapoint (community request)
+  (parity metadata is discouraged — write hole), ext4 on md raid6, and
+  bcachefs `--erasure_code --replicas=3` (stable since 1.37; write-hole-free
+  by design — writes replicate first, background reconcile stripes them)
+  (community request, incl. the correction that EC is no longer experimental)
 - **xfs on a ZFS zvol** — the Franken-stack people actually run: XFS
   semantics on top; ZFS snapshots (fsfreeze-consistent), self-healing,
   and compression underneath (community request)
