@@ -758,22 +758,27 @@ function zoomable(seriesFull, labelsFull, unit, height) {
     const band = svgel("rect", {y: g.T, height: g.ph, fill: css("--axis"),
       opacity: 0.25, visibility: "hidden", "pointer-events": "none"});
     svg.appendChild(band);
+    // The drag lives on the WINDOW once started: leaving the chart (or
+    // even the browser window) mid-drag keeps the selection alive, with
+    // the endpoint clamped to the plot edge — essential for the common
+    // "grab the middle, fling right for recent data" gesture.
     let dragX0 = null;
     const toX = ev => {
       const box = svg.getBoundingClientRect();
       return (ev.clientX - box.left) / box.width * g.W;
     };
-    svg.addEventListener("mousedown", ev => { dragX0 = toX(ev); ev.preventDefault(); });
-    svg.addEventListener("mousemove", ev => {
-      if (dragX0 == null) return;
-      const x = toX(ev);
+    const clampX = px => Math.max(g.L, Math.min(g.L + g.pw, px));
+    const onMove = ev => {
+      const x = clampX(toX(ev));
       band.setAttribute("x", Math.min(dragX0, x));
       band.setAttribute("width", Math.abs(x - dragX0));
       band.setAttribute("visibility", "visible");
-    });
-    svg.addEventListener("mouseup", ev => {
+    };
+    const onUp = ev => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
       if (dragX0 == null) return;
-      const x1 = dragX0, x2 = toX(ev);
+      const x1 = dragX0, x2 = clampX(toX(ev));
       dragX0 = null;
       band.setAttribute("visibility", "hidden");
       const n = labels.length;
@@ -781,8 +786,13 @@ function zoomable(seriesFull, labelsFull, unit, height) {
         Math.round(n === 1 ? 0 : (px - g.L) / g.pw * (n - 1))));
       const a = idx(Math.min(x1, x2)), b = idx(Math.max(x1, x2));
       if (b - a >= 1) { const nl = lo + a; hi = lo + b; lo = nl; render(); }
+    };
+    svg.addEventListener("mousedown", ev => {
+      dragX0 = clampX(toX(ev));
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      ev.preventDefault();
     });
-    svg.addEventListener("mouseleave", () => { dragX0 = null; band.setAttribute("visibility", "hidden"); });
     svg.addEventListener("dblclick", () => { lo = 0; hi = labelsFull.length - 1; render(); });
     holder.replaceChildren(svg);
   };
