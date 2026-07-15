@@ -79,6 +79,10 @@ jobs:
             # needs more or the pool exhausts mid-aging
             dev_size: 32G
             aging_iters: 10
+          - fs: zfs
+            layout: raidz2
+            # default recordsize — same snapshot-retention math as mirror
+            aging_iters: 10
           - fs: bcachefs
             layout: replicas2
           - fs: bcachefs
