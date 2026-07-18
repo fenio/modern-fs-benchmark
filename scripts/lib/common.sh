@@ -90,7 +90,9 @@ luks_wrap_top() {
 luks_close_all() {
   local m
   for m in /dev/mapper/fsbench-luks-*; do
-    [ -e "$m" ] && cryptsetup close "${m##*/}" 2>/dev/null || true
+    if [ -e "$m" ]; then
+      cryptsetup close "${m##*/}" 2>/dev/null || true
+    fi
   done
 }
 

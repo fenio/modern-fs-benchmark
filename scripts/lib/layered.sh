@@ -218,7 +218,9 @@ layered_teardown() {
       vgremove -fy "$VG" 2>/dev/null || true
       local d
       for d in /dev/mapper/fsbench-pv*; do
-        [ -e "$d" ] && dmsetup remove "${d##*/}" 2>/dev/null || true
+        if [ -e "$d" ]; then
+          dmsetup remove "${d##*/}" 2>/dev/null || true
+        fi
       done
       ;;
   esac
