@@ -147,6 +147,46 @@ class DashboardRegressionTests(unittest.TestCase):
         )
         self.assertEqual(data["repo"], "https://example.test/fsbench")
         self.assertIn('href="https://github.com/nasty-project/nasty"', html)
+        for legacy_section in (
+            "Latest run",
+            "Snapshot aging",
+            "Trends across runs",
+            "Table view",
+        ):
+            self.assertIn(legacy_section, html)
+        self.assertIn("Explore trends", html)
+        self.assertIn("content.appendChild(buildExplorer(view));", html)
+        self.assertIn(
+            "https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js",
+            html,
+        )
+        self.assertNotIn(
+            '<script src="https://cdn.jsdelivr.net/npm/echarts',
+            html,
+        )
+        self.assertIn("rebuild();\nloadExplorerLibrary();", html)
+        self.assertIn(
+            "sha384-F07Cpw5v8spSU0H113F33m2NQQ/o6GqPTnTjf45ssG4Q6q58ZwhxBiQtIaqvnSpR",
+            html,
+        )
+        self.assertIn(
+            "the existing dashboard charts are unaffected",
+            html,
+        )
+        self.assertEqual(
+            [
+                run["results"].get("ext4/single", {}).get("seqwrite_mbps")
+                for run in data["runs"]
+            ],
+            [510.2, None],
+        )
+        self.assertEqual(
+            [
+                run["results"].get("btrfs/raid1", {}).get("seqwrite_mbps")
+                for run in data["runs"]
+            ],
+            [None, 360.0],
+        )
 
     def test_dashboard_distinguishes_runs_from_compacted_trend_points(self):
         with tempfile.TemporaryDirectory() as tmp:

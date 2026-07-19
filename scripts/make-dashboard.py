@@ -530,6 +530,24 @@ h2 { font-size: 15px; font-weight: 650; margin: 40px 0 4px; }
 svg.chart { display: block; width: 100%; height: auto; }
 svg text { font: 11.5px system-ui, -apple-system, "Segoe UI", sans-serif; }
 svg.key { display: inline-block; width: 20px; height: 10px; flex: none; }
+.explorer { padding-bottom: 14px; }
+.explorer-controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
+.explorer-control { display: grid; gap: 3px; color: var(--muted); font-size: 11px; }
+.explorer-control select {
+  min-width: 150px; max-width: 280px; background: var(--page); color: var(--ink);
+  border: 1px solid var(--ring); border-radius: 6px; padding: 5px 8px;
+  font: 12px system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.explorer-control:first-child select { min-width: 240px; }
+.explorer-control select:disabled { opacity: 0.5; }
+.explorer-chart { width: 100%; height: 420px; margin-top: 10px; }
+.explorer-status { color: var(--muted); font-size: 12.5px; padding: 34px 4px; }
+@media (max-width: 720px) {
+  .explorer-control, .explorer-control select, .explorer-control:first-child select {
+    width: 100%; max-width: none;
+  }
+  .explorer-chart { height: 420px; }
+}
 .tt {
   position: fixed; pointer-events: none; z-index: 10; display: none;
   background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
@@ -841,6 +859,197 @@ function zoomable(seriesFull, labelsFull, unit, height) {
   return holder;
 }
 
+// ---- optional enhanced chart explorer ---------------------------------------
+// ECharts is loaded after the dependency-free dashboard has rendered. A load
+// or initialization failure affects this panel only; all SVG charts stay live.
+const ECHARTS_URL = "https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js";
+const ECHARTS_INTEGRITY = "sha384-F07Cpw5v8spSU0H113F33m2NQQ/o6GqPTnTjf45ssG4Q6q58ZwhxBiQtIaqvnSpR";
+let explorerChart = null;
+let explorerResizeObserver = null;
+let explorerLoadState = "loading";
+let explorerMetric = DATA.metrics.some(m => m.key === "seqwrite_mbps")
+  ? "seqwrite_mbps" : DATA.metrics[0].key;
+let explorerMode = "raw";
+let explorerDays = 0;
+let explorerBaseline = null;
+
+const numeric = v => typeof v === "number" && Number.isFinite(v);
+const explorerLineType = e => ["solid", "dashed", "dotted", "dashed", "dotted"][e.vi % 5];
+
+function disposeExplorer() {
+  if (explorerResizeObserver) explorerResizeObserver.disconnect();
+  explorerResizeObserver = null;
+  if (explorerChart) explorerChart.dispose();
+  explorerChart = null;
+}
+
+function explorerRuns() {
+  if (!explorerDays || !DATA.runs.length) return DATA.runs;
+  const newest = Date.parse(DATA.runs[DATA.runs.length - 1].date || 0);
+  return DATA.runs.filter(r =>
+    Date.parse(r.date || 0) >= newest - explorerDays * 864e5);
+}
+
+function renderExplorer(view) {
+  const node = document.getElementById("explorer-chart");
+  const status = document.getElementById("explorer-status");
+  if (!node || !status) return;
+  disposeExplorer();
+  if (explorerLoadState !== "ready" || !window.echarts) {
+    node.style.display = "none";
+    status.textContent = explorerLoadState === "failed"
+      ? "Enhanced chart unavailable; the existing dashboard charts are unaffected."
+      : "Loading enhanced chart controls…";
+    status.style.display = "block";
+    return;
+  }
+
+  const runs = explorerRuns();
+  const metric = DATA.metrics.find(m => m.key === explorerMetric) || DATA.metrics[0];
+  const baseline = view.find(e => e.id === explorerBaseline) || view[0];
+  explorerBaseline = baseline ? baseline.id : null;
+  const rawValue = (r, e) => (r.results[e.id] || {})[metric.key];
+  const baselineValues = baseline ? runs.map(r => rawValue(r, baseline)) : [];
+  let unit = metric.unit;
+  const series = view.map(e => {
+    const raw = runs.map(r => rawValue(r, e));
+    let data = raw.map(v => numeric(v) ? v : null);
+    if (explorerMode === "indexed") {
+      const first = data.find(numeric);
+      data = data.map(v => numeric(v) && numeric(first) && first !== 0
+        ? (v / first - 1) * 100 : null);
+      unit = "% from first visible";
+    } else if (explorerMode === "baseline") {
+      data = data.map((v, i) => numeric(v) && numeric(baselineValues[i]) && baselineValues[i] !== 0
+        ? (v / baselineValues[i] - 1) * 100 : null);
+      unit = `% vs ${explorerBaseline}`;
+    }
+    return {
+      id: e.id, name: e.id, type: "line", data,
+      connectNulls: false, showSymbol: runs.length <= 30, symbolSize: 6,
+      lineStyle: {width: 2.2, type: explorerLineType(e)},
+      itemStyle: {color: color(e)}, emphasis: {focus: "series"},
+    };
+  });
+  if (!series.some(s => s.data.some(numeric))) {
+    node.style.display = "none";
+    status.textContent = "No numeric points for this metric and selection.";
+    status.style.display = "block";
+    return;
+  }
+
+  status.style.display = "none";
+  node.style.display = "block";
+  try {
+    const compact = node.clientWidth < 600;
+    explorerChart = window.echarts.init(node, null, {renderer: "canvas"});
+    explorerChart.setOption({
+      animation: false,
+      aria: {enabled: true},
+      color: view.map(color),
+      textStyle: {color: css("--ink-2"), fontFamily: "system-ui, sans-serif"},
+      legend: {type: "scroll", top: 4, left: 8, right: compact ? 8 : 108,
+        textStyle: {color: css("--ink-2")}},
+      toolbox: {top: compact ? 34 : 0, right: 4, iconStyle: {borderColor: css("--ink-2")},
+        feature: {dataZoom: {}, restore: {}, saveAsImage: {name: `fsbench-${metric.key}`}}},
+      tooltip: {trigger: "axis", valueFormatter: v => numeric(v) ? `${fmt(v)} ${unit}` : "—"},
+      grid: {left: 66, right: 24, top: compact ? 92 : 58, bottom: 72, containLabel: false},
+      xAxis: {type: "category", boundaryGap: false,
+        data: runs.map(r => (r.date || r.id).slice(0, 16).replace("T", " ")),
+        axisLine: {lineStyle: {color: css("--axis")}},
+        axisLabel: {color: css("--muted"), hideOverlap: true},
+        splitLine: {show: false}},
+      yAxis: {type: "value", name: unit, nameTextStyle: {color: css("--muted")},
+        axisLabel: {color: css("--muted"), formatter: v => fmt(v)},
+        splitLine: {lineStyle: {color: css("--grid")}}},
+      dataZoom: [{type: "inside", filterMode: "none"},
+                 {type: "slider", height: 22, bottom: 18, filterMode: "none",
+                  borderColor: css("--grid"), textStyle: {color: css("--muted")}}],
+      series,
+    }, {notMerge: true});
+    if (window.ResizeObserver) {
+      explorerResizeObserver = new ResizeObserver(() => explorerChart && explorerChart.resize());
+      explorerResizeObserver.observe(node);
+    }
+  } catch (error) {
+    disposeExplorer();
+    node.style.display = "none";
+    status.textContent = "Enhanced chart could not be rendered; the existing dashboard charts are unaffected.";
+    status.style.display = "block";
+    console.error("chart explorer failed", error);
+  }
+}
+
+function explorerSelect(label, options, value) {
+  const select = el("select");
+  options.forEach(([v, text]) => select.appendChild(el("option", {value: v}, text)));
+  select.value = String(value);
+  const control = el("label", {class: "explorer-control"});
+  control.appendChild(el("span", {}, label));
+  control.appendChild(select);
+  return {control, select};
+}
+
+function buildExplorer(view) {
+  const section = el("section", {id: "chart-explorer"});
+  section.appendChild(el("h2", {}, "Explore trends"));
+  section.appendChild(el("p", {class: "note"},
+    "An optional interactive view beside the existing charts. It uses the same compacted history and active filesystem filters; scroll or drag to zoom, and use the toolbox to restore or export."));
+  const card = el("div", {class: "card explorer"});
+  const controls = el("div", {class: "explorer-controls"});
+  const metric = explorerSelect("Metric",
+    DATA.metrics.map(m => [m.key, `${m.label} (${m.unit})`]), explorerMetric);
+  const mode = explorerSelect("Display",
+    [["raw", "Raw values"], ["indexed", "% change from first visible"],
+     ["baseline", "% versus a configuration"]], explorerMode);
+  const range = explorerSelect("Range",
+    [["1", "24 hours"], ["7", "7 days"], ["30", "30 days"], ["0", "All history"]], explorerDays);
+  const activeBaseline = view.some(e => e.id === explorerBaseline) ? explorerBaseline : (view[0] || {}).id;
+  const baseline = explorerSelect("Baseline",
+    view.map(e => [e.id, e.id]), activeBaseline || "");
+  explorerBaseline = activeBaseline || null;
+  baseline.select.disabled = explorerMode !== "baseline";
+  metric.select.addEventListener("change", () => { explorerMetric = metric.select.value; renderExplorer(view); });
+  mode.select.addEventListener("change", () => {
+    explorerMode = mode.select.value;
+    baseline.select.disabled = explorerMode !== "baseline";
+    renderExplorer(view);
+  });
+  range.select.addEventListener("change", () => { explorerDays = Number(range.select.value); renderExplorer(view); });
+  baseline.select.addEventListener("change", () => { explorerBaseline = baseline.select.value; renderExplorer(view); });
+  [metric, mode, range, baseline].forEach(c => controls.appendChild(c.control));
+  card.appendChild(controls);
+  card.appendChild(el("div", {id: "explorer-status", class: "explorer-status"},
+    "Loading enhanced chart controls…"));
+  card.appendChild(el("div", {id: "explorer-chart", class: "explorer-chart",
+    role: "img", "aria-label": "Customizable benchmark trend chart"}));
+  section.appendChild(card);
+  requestAnimationFrame(() => renderExplorer(view));
+  return section;
+}
+
+function loadExplorerLibrary() {
+  if (window.echarts) {
+    explorerLoadState = "ready";
+    renderExplorer(ents.filter(isActive));
+    return;
+  }
+  const script = document.createElement("script");
+  script.src = ECHARTS_URL;
+  script.integrity = ECHARTS_INTEGRITY;
+  script.crossOrigin = "anonymous";
+  script.referrerPolicy = "no-referrer";
+  script.addEventListener("load", () => {
+    explorerLoadState = "ready";
+    renderExplorer(ents.filter(isActive));
+  });
+  script.addEventListener("error", () => {
+    explorerLoadState = "failed";
+    renderExplorer(ents.filter(isActive));
+  });
+  document.head.appendChild(script);
+}
+
 // ---- table (sort state survives rebuilds) ------------------------------------
 const cols = [
   {label: "filesystem", str: true, get: (e, r, c) => e.id},
@@ -992,6 +1201,7 @@ app.appendChild(content);
 
 function rebuild() {
   const view = ents.filter(isActive);
+  disposeExplorer();
   content.replaceChildren();
   if (!view.length) {
     content.appendChild(el("p", {class: "note", style: "margin-top:24px"},
@@ -1055,6 +1265,8 @@ function rebuild() {
     content.appendChild(tgrid);
   }
 
+  content.appendChild(buildExplorer(view));
+
   content.appendChild(el("h2", {}, "Table view"));
   content.appendChild(el("p", {class: "note"},
     "Latest run, all metrics — click a column header to sort. calib = host-disk anchor measured before the filesystem exists (VM noise indicator)."));
@@ -1063,6 +1275,7 @@ function rebuild() {
   content.appendChild(wrap);
 }
 rebuild();
+loadExplorerLibrary();
 
 {
   app.appendChild(el("h2", {}, "Metric reference"));
