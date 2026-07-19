@@ -551,6 +551,25 @@ h2 { font-size: 15px; font-weight: 650; margin: 40px 0 4px; }
 }
 .legend button.chip[aria-pressed="false"] { opacity: 0.32; }
 .wide { overflow-x: auto; }
+.index-card { padding-bottom: 14px; }
+.index-score {
+  background: none; border: 0; color: var(--ink); cursor: pointer;
+  font: 650 14px system-ui, -apple-system, "Segoe UI", sans-serif; padding: 0;
+}
+.index-score:hover { text-decoration: underline; text-underline-offset: 3px; }
+.index-score.good { color: var(--s4); }
+.index-score.bad { color: var(--s3); }
+.index-coverage { display: block; color: var(--muted); font-size: 10.5px; }
+.index-badge {
+  display: inline-block; border: 1px solid var(--ring); border-radius: 999px;
+  padding: 1px 7px; color: var(--muted); font-size: 10.5px; font-weight: 650;
+}
+.index-badge.pass { color: var(--s4); border-color: var(--s4); }
+.index-badge.fail { color: var(--s3); border-color: var(--s3); }
+.index-badge.lucky { color: var(--s5); border-color: var(--s5); }
+.index-detail { color: var(--ink-2); font-size: 12px; min-height: 20px; margin-top: 10px; }
+.index-detail b { color: var(--ink); font-weight: 600; }
+.index-detail span { display: inline-block; margin: 3px 14px 0 0; }
 svg.chart { display: block; width: 100%; height: auto; }
 svg text { font: 11.5px system-ui, -apple-system, "Segoe UI", sans-serif; }
 svg.key { display: inline-block; width: 20px; height: 10px; flex: none; }
@@ -620,6 +639,7 @@ const fmt = v => v == null ? "—"
   : v >= 100 ? Math.round(v).toLocaleString("en-US")
   : v >= 10 ? (v % 1 ? v.toFixed(1) : String(v))
   : (Math.round(v * 100) / 100).toString();
+const numeric = v => typeof v === "number" && Number.isFinite(v);
 const el = (tag, attrs, html) => {
   const n = document.createElement(tag);
   for (const k in attrs || {}) n.setAttribute(k, attrs[k]);
@@ -659,6 +679,166 @@ const isActive = e => manual.has(e.id)
 let logScale = false;
 const logMap = (v, lo, hi) =>
   (Math.log10(v) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo));
+
+// Summary score model v1. Normalize each metric to the active cohort median,
+// then geometric-mean metrics into equal-weight subgroups and groups. Boolean
+// integrity outcomes stay categorical and never enter a score.
+const SCORE_MODEL = {
+  version: 1,
+  runWindow: 8,
+  groups: [
+    {key: "io", label: "Core I/O", components: [
+      ["seqwrite_mbps", "randwrite_iops", "randwrite4_iops"],
+      ["seqread_mbps", "randread_iops", "randread4_iops"],
+    ]},
+    {key: "responsive", label: "Responsiveness", components: [
+      ["fsync_p99_ms", "fsync_p999_ms"],
+      ["lat_idle_p99_ms", "lat_load_ops"],
+    ]},
+    {key: "metadata", label: "Metadata", components: [
+      ["smalltree_create_ms", "smalltree_create4_ms", "smalltree_cp_ms", "smalltree_rm_ms"],
+      ["largedir_create_ms", "largedir_readdir_cold_ms", "largedir_stat_cold_ms",
+       "largedir_stat_warm_ms", "largedir_delete_ms"],
+    ]},
+  ],
+};
+const scoreMetric = new Map(DATA.metrics.map(metric => [metric.key, metric]));
+const scoreMedian = values => {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+};
+const scoreGeomean = values => values.length
+  ? Math.exp(values.reduce((sum, value) => sum + Math.log(value), 0) / values.length)
+  : null;
+const integrityCapable = entity => COW.has(famOf(entity))
+  || entity.id === "xfs/zvol" || entity.id === "xfs/lvm-raid10-int";
+
+function scoreSummaryData(view) {
+  const completeRuns = DATA.runs.filter(run =>
+    view.every(entity => run.results[entity.id]));
+  const runs = completeRuns.slice(-SCORE_MODEL.runWindow);
+  const metricKeys = [...new Set(SCORE_MODEL.groups.flatMap(group => group.components.flat()))];
+  const entityMedians = new Map(view.map(entity => [entity.id, new Map()]));
+  view.forEach(entity => metricKeys.forEach(metric => {
+    const values = runs.map(run => (run.results[entity.id] || {})[metric])
+      .filter(value => numeric(value) && value > 0);
+    if (values.length) entityMedians.get(entity.id).set(metric, scoreMedian(values));
+  }));
+
+  const ratios = new Map(view.map(entity => [entity.id, new Map()]));
+  metricKeys.forEach(metric => {
+    const cohort = view.map(entity => entityMedians.get(entity.id).get(metric))
+      .filter(value => numeric(value) && value > 0);
+    if (!cohort.length) return;
+    const baseline = scoreMedian(cohort);
+    const direction = (scoreMetric.get(metric) || {}).better;
+    view.forEach(entity => {
+      const value = entityMedians.get(entity.id).get(metric);
+      if (!numeric(value) || value <= 0 || baseline <= 0) return;
+      ratios.get(entity.id).set(metric,
+        direction === "lower" ? baseline / value : value / baseline);
+    });
+  });
+
+  const rows = view.map(entity => {
+    const groups = SCORE_MODEL.groups.map(group => {
+      const components = group.components.map(metrics =>
+        scoreGeomean(metrics.map(metric => ratios.get(entity.id).get(metric))
+          .filter(value => numeric(value) && value > 0)))
+        .filter(value => numeric(value) && value > 0);
+      const contributions = group.components.flat().map(metric => ({
+        metric,
+        ratio: ratios.get(entity.id).get(metric),
+      })).filter(item => numeric(item.ratio) && item.ratio > 0);
+      return {
+        key: group.key,
+        label: group.label,
+        ratio: scoreGeomean(components),
+        coverage: contributions.length,
+        total: group.components.flat().length,
+        contributions,
+      };
+    });
+    const overall = scoreGeomean(groups.map(group => group.ratio)
+      .filter(value => numeric(value) && value > 0));
+    const integrity = (latest.results[entity.id] || {}).data_intact;
+    return {entity, groups, overall, integrity};
+  });
+  return {runs, rows};
+}
+
+function indexButton(ratio, coverage, total, title, onClick) {
+  if (!numeric(ratio)) return el("span", {class: "index-coverage"}, "N/A");
+  const score = Math.round(ratio * 100);
+  const tone = score >= 105 ? " good" : score <= 95 ? " bad" : "";
+  const holder = el("span");
+  const button = el("button", {class: `index-score${tone}`, type: "button", title}, score);
+  button.addEventListener("click", onClick);
+  holder.appendChild(button);
+  if (coverage != null) {
+    holder.appendChild(el("span", {class: "index-coverage"}, `${coverage}/${total} metrics`));
+  }
+  return holder;
+}
+
+function buildScoreSummary(view) {
+  const summary = scoreSummaryData(view);
+  const section = el("section", {id: "summary-indices"});
+  section.appendChild(el("h2", {}, "Summary indices"));
+  section.appendChild(el("p", {class: "note"},
+    `Score model v${SCORE_MODEL.version}: 100 = the selected cohort median. Metrics are ` +
+    `normalized by direction, then geometric-meaned with equal subgroup and group weight. ` +
+    `Using ${summary.runs.length} recent complete selected-cohort run${summary.runs.length === 1 ? "" : "s"}; integrity is never averaged.`));
+  if (!summary.runs.length) {
+    section.appendChild(el("div", {class: "card index-card"},
+      '<p class="note">No run contains every selected configuration; detailed dashboard data remains available below.</p>'));
+    return section;
+  }
+
+  const card = el("div", {class: "card wide index-card"});
+  const table = el("table", {class: "index-table"});
+  const head = el("tr");
+  ["configuration", "Overall Core", ...SCORE_MODEL.groups.map(group => group.label), "Integrity"]
+    .forEach(label => head.appendChild(el("th", {}, label)));
+  table.appendChild(head);
+  const detail = el("div", {class: "index-detail"},
+    "Select a score to see its contributing normalized metrics.");
+  const showDetail = (entity, label, contributions) => {
+    const parts = contributions.map(item => {
+      const metric = scoreMetric.get(item.metric);
+      return `<span>${metric ? metric.label : item.metric}: <b>${Math.round(item.ratio * 100)}</b></span>`;
+    }).join("");
+    detail.innerHTML = `<b>${entity.id} · ${label}</b><br>${parts}`;
+  };
+  summary.rows.forEach(row => {
+    const tr = el("tr");
+    tr.appendChild(el("td", {},
+      `<span style="display:inline-flex;align-items:center;gap:7px">${key(row.entity)}${row.entity.id}${isStale(row.entity.id) ? " \u2020" : ""}</span>`));
+    tr.appendChild(el("td")).appendChild(indexButton(
+      row.overall, null, null, "Show group contributions",
+      () => showDetail(row.entity, "Overall Core",
+        row.groups.filter(group => numeric(group.ratio)).map(group => ({
+          metric: group.label, ratio: group.ratio,
+        })))));
+    row.groups.forEach(group => tr.appendChild(el("td")).appendChild(indexButton(
+      group.ratio, group.coverage, group.total, "Show metric contributions",
+      () => showDetail(row.entity, group.label, group.contributions))));
+    const integrity = row.integrity === false ? ["FAIL", "fail", "Data changed after corruption"]
+      : row.integrity === true && integrityCapable(row.entity)
+        ? ["PASS", "pass", "Checksummed or integrity-protected data remained intact"]
+        : row.integrity === true
+          ? ["LUCKY", "lucky", "Intact read without data checksums; read-balancing luck"]
+          : ["N/A", "", "Corruption test not applicable"];
+    tr.appendChild(el("td", {},
+      `<span class="index-badge ${integrity[1]}" title="${integrity[2]}">${integrity[0]}</span>`));
+    table.appendChild(tr);
+  });
+  card.appendChild(table);
+  card.appendChild(detail);
+  section.appendChild(card);
+  return section;
+}
 
 // Horizontal bar card: one row per filesystem, value at the tip.
 function barCard(metric, view) {
@@ -897,7 +1077,6 @@ let explorerMode = "raw";
 let explorerDays = 0;
 let explorerBaseline = null;
 
-const numeric = v => typeof v === "number" && Number.isFinite(v);
 const explorerLineType = e => ["solid", "dashed", "dotted", "dashed", "dotted"][e.vi % 5];
 
 function disposeExplorer() {
@@ -1231,6 +1410,14 @@ function rebuild() {
     content.appendChild(el("p", {class: "note", style: "margin-top:24px"},
       "Nothing selected — pick filesystems above."));
     return;
+  }
+
+  try {
+    content.appendChild(buildScoreSummary(view));
+  } catch (error) {
+    console.error("summary indices failed", error);
+    content.appendChild(el("section", {id: "summary-indices"},
+      '<h2>Summary indices</h2><p class="note">Summary indices unavailable; all detailed dashboard views remain available below.</p>'));
   }
 
   content.appendChild(el("h2", {}, "Latest run"));

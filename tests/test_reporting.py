@@ -159,6 +159,16 @@ class DashboardRegressionTests(unittest.TestCase):
             "Table view",
         ):
             self.assertIn(legacy_section, html)
+        self.assertIn("Summary indices", html)
+        self.assertIn("content.appendChild(buildScoreSummary(view));", html)
+        self.assertIn(
+            "all detailed dashboard views remain available below",
+            html,
+        )
+        self.assertLess(
+            html.index("content.appendChild(buildScoreSummary(view));"),
+            html.index('content.appendChild(el("h2", {}, "Latest run"));'),
+        )
         self.assertIn("Explore trends", html)
         self.assertIn("content.appendChild(buildExplorer(view));", html)
         self.assertIn(
