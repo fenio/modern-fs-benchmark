@@ -19,6 +19,7 @@ XFS_BACKEND = ROOT / "scripts" / "fs" / "xfs.sh"
 BCACHEFS_BACKEND = ROOT / "scripts" / "fs" / "bcachefs.sh"
 BCACHEFS_DEBUG = ROOT / "scripts" / "lib" / "bcachefs-debug.sh"
 BCACHEFS_REPRO = ROOT / "scripts" / "repro-bcachefs-ec-evacuate.sh"
+BCACHEFS_KTEST_REPRO = ROOT / "contrib" / "ktest" / "bcachefs-ec-evacuate.ktest"
 BENCH_WORKFLOW = ROOT / ".github" / "workflows" / "bench.yml"
 BCACHEFS_REPRO_WORKFLOW = (
     ROOT / ".github" / "workflows" / "repro-bcachefs-ec.yml"
@@ -803,6 +804,23 @@ class BackendConfigurationTests(unittest.TestCase):
             self.assertIn(command, reproducer)
         self.assertIn("workflow_dispatch", workflow)
         self.assertIn("if: always()", workflow)
+
+    def test_bcachefs_ec_ktest_reproducer_matches_failure_path(self):
+        reproducer = BCACHEFS_KTEST_REPRO.read_text()
+
+        self.assertIn(
+            '$ktest_dir/tests/fs/bcachefs/bcachefs-test-libs.sh', reproducer
+        )
+        self.assertEqual(reproducer.count("config-scratch-devs 16G"), 5)
+        for command in (
+            "--erasure_code",
+            "--replicas=3",
+            "bcachefs device offline --force",
+            "bcachefs device add -f",
+            "bcachefs device evacuate",
+            "set_watchdog 1200",
+        ):
+            self.assertIn(command, reproducer)
 
 
 if __name__ == "__main__":

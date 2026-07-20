@@ -151,6 +151,41 @@ Each attempt records:
 - bcachefs process stacks
 - SysRq blocked-task report and `dmesg` on a stall
 
+### Native ktest reproducer
+
+[`contrib/ktest/bcachefs-ec-evacuate.ktest`](../contrib/ktest/bcachefs-ec-evacuate.ktest)
+expresses the same five-device sequence using scratch devices supplied by
+[koverstreet/ktest](https://github.com/koverstreet/ktest). It can be run from a
+Linux kernel source tree without copying it into the ktest checkout:
+
+```console
+build-test-kernel run /path/to/modern-fs-benchmark/contrib/ktest/bcachefs-ec-evacuate.ktest
+```
+
+The test uses ktest's 20-minute watchdog, which preserves the harness's timeout
+diagnostics when `bcachefs device evacuate` stops making progress. Because the
+observed failure is intermittent, ktest can repeat the test until it fails:
+
+```console
+build-test-kernel run -L /path/to/modern-fs-benchmark/contrib/ktest/bcachefs-ec-evacuate.ktest
+```
+
+This complements `test_device_evacuate_offline` and
+`test_device_evacuate_online` in ktest's existing `ec.ktest`. Those tests format
+all five devices with `--replicas=2` and either evacuate immediately after
+offlining a member or never offline it. This reproducer formats four devices
+with `--replicas=3`, performs IO while one is offline, brings it online, adds a
+fifth device, and then evacuates the original member.
+
+The native test was validated in an ARM64 Ubuntu 26.04 VM on kernel
+7.0.0-27-generic with bcachefs tools and DKMS module 1.38.8. Using the real
+ktest bcachefs libraries and five manually provisioned 16 GiB scratch devices,
+the test's `deps` and `list-tests` entry points parsed successfully and the full
+test passed. Evacuation moved the selected member from 3.95 GiB to zero, scrub
+reported no errors, and offline fsck completed cleanly. That single successful
+run validates the ktest integration but does not change the intermittent
+failure rate measured above.
+
 ## Upstream report draft
 
 > bcachefs 1.38.8 intermittently stops making progress during device
@@ -166,4 +201,7 @@ Each attempt records:
 > failure bundles likewise show zero reconcile movement and only 4 MiB of 799
 > MiB stripe-buffer memory in use, unlike issue #1182. The attached bundles
 > include usage, reconcile status, new_stripes, moving contexts, blocked tasks,
-> pressure, and the kernel log.
+> pressure, and the kernel log. A native ktest reproducer is available at
+> `contrib/ktest/bcachefs-ec-evacuate.ktest` and uses five 16 GiB scratch
+> devices plus the standard bcachefs test helpers. It has completed one full
+> validation run, including scrub and offline fsck, in an ARM64 Ubuntu VM.

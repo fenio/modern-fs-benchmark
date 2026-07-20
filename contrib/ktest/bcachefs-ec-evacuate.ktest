@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Reproduce an intermittent EC evacuation stall after degraded IO.
+# shellcheck disable=SC1091,SC2154
+
+. "$ktest_dir/tests/fs/bcachefs/bcachefs-test-libs.sh"
+
+require-kernel-config BCACHEFS_ERASURE_CODING
+
+config-scratch-devs 16G
+config-scratch-devs 16G
+config-scratch-devs 16G
+config-scratch-devs 16G
+config-scratch-devs 16G
+
+config-mem 4G
+
+test_ec_evacuate_after_degraded_io()
+{
+    set_watchdog 1200
+
+    run_quiet "" bcachefs format -f		\
+	--erasure_code				\
+	--replicas=3				\
+	"${ktest_scratch_dev[0]}"			\
+	"${ktest_scratch_dev[1]}"			\
+	"${ktest_scratch_dev[2]}"			\
+	"${ktest_scratch_dev[3]}"
+
+    mount -t bcachefs "$(join_by : "${ktest_scratch_dev[@]:0:4}")" /mnt
+    bcachefs subvolume create /mnt/data
+
+    fio --output-format=json			\
+	--output="$ktest_out/fio-seed.json"	\
+	--name=seed				\
+	--filename=/mnt/data/seed.dat		\
+	--rw=write				\
+	--bs=1M					\
+	--size=7G				\
+	--end_fsync=1
+
+    fio --output-format=json			\
+	--output="$ktest_out/fio-churn.json"	\
+	--name=churn				\
+	--filename=/mnt/data/seed.dat		\
+	--rw=randwrite				\
+	--bs=4k					\
+	--size=7G				\
+	--runtime=120				\
+	--time_based				\
+	--fdatasync=16
+
+    bcachefs fs usage -h /mnt
+    bcachefs device offline --force "${ktest_scratch_dev[1]}" ||
+	bcachefs device offline "${ktest_scratch_dev[1]}"
+
+    fio --output-format=json				\
+	--output="$ktest_out/fio-degraded-write.json"	\
+	--name=degraded-write				\
+	--directory=/mnt/data				\
+	--rw=randwrite					\
+	--bs=4k						\
+	--size=1G					\
+	--runtime=30					\
+	--time_based					\
+	--fdatasync=16
+
+    fio --output-format=json				\
+	--output="$ktest_out/fio-degraded-read.json"	\
+	--name=degraded-read				\
+	--filename=/mnt/data/seed.dat			\
+	--rw=randread					\
+	--bs=4k						\
+	--size=7G					\
+	--runtime=30					\
+	--time_based
+
+    bcachefs device online "${ktest_scratch_dev[1]}"
+    bcachefs device add -f /mnt "${ktest_scratch_dev[4]}"
+    bcachefs device evacuate "${ktest_scratch_dev[1]}"
+
+    bcachefs fs usage -h /mnt
+    bcachefs scrub /mnt
+    umount /mnt
+    bcachefs fsck -ny "${ktest_scratch_dev[@]}"
+    bcachefs_test_end_checks "${ktest_scratch_dev[0]}"
+}
+
+main "$@"
