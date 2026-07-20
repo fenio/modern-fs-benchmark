@@ -22,9 +22,6 @@ DEVICE_SIZE=${DEVICE_SIZE:-16G}
 SEED_SIZE=${SEED_SIZE:-7G}
 CHURN_RUNTIME=${CHURN_RUNTIME:-120}
 DEGRADED_RUNTIME=${DEGRADED_RUNTIME:-30}
-RECONCILE_BEFORE_DEGRADE=${RECONCILE_BEFORE_DEGRADE:-0}
-BCACHEFS_RECONCILE_TIMEOUT=${BCACHEFS_RECONCILE_TIMEOUT:-5m}
-RECONCILE_DRIVER_RUNTIME=${RECONCILE_DRIVER_RUNTIME:-300}
 
 mkdir -p "$WORK_ROOT" "$OUTPUT_DIR"
 WORK_DIR=$(mktemp -d "$WORK_ROOT/bcachefs-ec-evacuate.XXXXXX")
@@ -32,17 +29,12 @@ MNT="$WORK_DIR/mnt"
 DATA="$MNT/data"
 mkdir -p "$MNT"
 declare -a LOOPS=()
-RECONCILE_DRIVER_PID=
 
 exec > >(tee -a "$OUTPUT_DIR/reproducer.log") 2>&1
 
 cleanup() {
   set +e
   log "cleanup"
-  if [ -n "$RECONCILE_DRIVER_PID" ]; then
-    kill "$RECONCILE_DRIVER_PID" 2>/dev/null || true
-    wait "$RECONCILE_DRIVER_PID" 2>/dev/null || true
-  fi
   if mountpoint -q "$MNT"; then
     timeout 30s umount "$MNT"
   fi
@@ -87,33 +79,6 @@ log "churn seed with 4k random writes for ${CHURN_RUNTIME}s"
 fio --output-format=json --output="$OUTPUT_DIR/fio-churn.json" \
   --name=churn --filename="$DATA/seed.dat" --rw=randwrite --bs=4k \
   --size="$SEED_SIZE" --runtime="$CHURN_RUNTIME" --time_based --fdatasync=16
-
-if [ "$RECONCILE_BEFORE_DEGRADE" = 1 ]; then
-  log "drive the IO clock while waiting for EC reconcile before device loss"
-  bcachefs_debug_dump "$OUTPUT_DIR/reconcile-wait-before.txt" "$MNT" 0
-  fio --output-format=json --output="$OUTPUT_DIR/fio-reconcile-driver.json" \
-    --name=reconcile-driver --filename="$DATA/seed.dat" --rw=read --bs=1M \
-    --size="$SEED_SIZE" --runtime="$RECONCILE_DRIVER_RUNTIME" --time_based \
-    --direct=1 &
-  RECONCILE_DRIVER_PID=$!
-  reconcile_rc=0
-  timeout --signal=TERM --kill-after=30s "$BCACHEFS_RECONCILE_TIMEOUT" \
-    bcachefs reconcile wait -t erasure_code "$MNT" || reconcile_rc=$?
-  if [ "$reconcile_rc" -ne 0 ] && [ "$reconcile_rc" -ne 124 ] \
-     && [ "$reconcile_rc" -ne 137 ]; then
-    log "typed reconcile wait exited $reconcile_rc; try generic syntax"
-    reconcile_rc=0
-    timeout --signal=TERM --kill-after=30s "$BCACHEFS_RECONCILE_TIMEOUT" \
-      bcachefs reconcile wait "$MNT" || reconcile_rc=$?
-  fi
-  kill "$RECONCILE_DRIVER_PID" 2>/dev/null || true
-  wait "$RECONCILE_DRIVER_PID" 2>/dev/null || true
-  RECONCILE_DRIVER_PID=
-  if [ "$reconcile_rc" -ne 0 ]; then
-    bcachefs_debug_dump "$OUTPUT_DIR/reconcile-wait-failed.txt" "$MNT" 1
-    die "EC reconcile wait failed or timed out with status $reconcile_rc"
-  fi
-fi
 
 bcachefs_debug_dump "$OUTPUT_DIR/before-offline.txt" "$MNT" 0
 

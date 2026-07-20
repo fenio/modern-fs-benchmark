@@ -2,11 +2,6 @@ name: reproduce-bcachefs-ec-evacuation
 
 on:
   workflow_dispatch:
-    inputs:
-      reconcile_before_degrade:
-        description: 'Drive IO while waiting for EC reconcile before device loss'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -32,9 +27,6 @@ jobs:
             OUTPUT_DIR="$PWD/repro-output" \
             WORK_ROOT=/mnt \
             REPRO_ATTEMPT=${{ matrix.attempt }} \
-            RECONCILE_BEFORE_DEGRADE=${{ inputs.reconcile_before_degrade && '1' || '0' }} \
-            BCACHEFS_RECONCILE_TIMEOUT=5m \
-            RECONCILE_DRIVER_RUNTIME=300 \
             BCACHEFS_EVAC_DIAG_AFTER=180 \
             BCACHEFS_EVAC_TIMEOUT=10m \
             scripts/repro-bcachefs-ec-evacuate.sh

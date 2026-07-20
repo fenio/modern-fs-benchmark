@@ -62,11 +62,13 @@ The last point does not match the stripe-buffer exhaustion reported in issue
 second path to the same closure wait. The captured artifact is intended to let
 upstream distinguish those cases.
 
-An initial passive `RECONCILE_BEFORE_DEGRADE=1` control was invalid: three
-waits timed out because bcachefs reported an IO-clock wait while the test was
-idle. The current control drives direct reads during the optional barrier so
-the IO clock advances. It captures a full diagnostic snapshot if reconcile
-still fails to drain.
+Two attempted pre-degrade `bcachefs reconcile wait` controls were discarded:
+[run 29746041465](https://github.com/fenio/modern-fs-benchmark/actions/runs/29746041465)
+and [run 29748213670](https://github.com/fenio/modern-fs-benchmark/actions/runs/29748213670).
+The remaining normal-priority EC work was tied to an open stripe and the
+reconcile thread was deliberately rate-limited on the write IO clock. Those
+timeouts occurred before any member was offlined, but do not establish an
+independent reconcile bug or a safe barrier before device loss.
 
 ## Standalone reproducer
 
@@ -89,15 +91,9 @@ Observed failure signature: evacuation drops below 1 MiB remaining and makes
 no further progress. The default command timeout is 12 minutes, with a live
 diagnostic snapshot after three minutes.
 
-Useful controls:
+Timeout override:
 
 ```sh
-# Test whether completing pending EC work prevents the stall.
-sudo RECONCILE_BEFORE_DEGRADE=1 \
-  OUTPUT_DIR="$PWD/repro-with-reconcile" \
-  scripts/repro-bcachefs-ec-evacuate.sh
-
-# Override diagnostic and command timeouts.
 sudo BCACHEFS_EVAC_DIAG_AFTER=60 BCACHEFS_EVAC_TIMEOUT=5m \
   OUTPUT_DIR="$PWD/repro-fast" \
   scripts/repro-bcachefs-ec-evacuate.sh

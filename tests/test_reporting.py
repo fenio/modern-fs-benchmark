@@ -796,21 +796,12 @@ class BackendConfigurationTests(unittest.TestCase):
 
         for command in (
             "bcachefs format -f --erasure_code --replicas=3",
-            "--name=reconcile-driver",
-            "--rw=read",
-            "--direct=1",
-            "bcachefs reconcile wait -t erasure_code",
             "bcachefs device offline --force",
             "bcachefs device add",
             "bcachefs_evacuate_with_diagnostics",
         ):
             self.assertIn(command, reproducer)
-        self.assertLess(
-            reproducer.index("--name=reconcile-driver"),
-            reproducer.index("bcachefs reconcile wait -t erasure_code"),
-        )
         self.assertIn("workflow_dispatch", workflow)
-        self.assertIn("RECONCILE_DRIVER_RUNTIME=300", workflow)
         self.assertIn("if: always()", workflow)
 
 
