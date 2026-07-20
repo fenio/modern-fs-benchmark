@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       reconcile_before_degrade:
-        description: 'Wait for pending EC reconcile before offlining a member'
+        description: 'Drive IO while waiting for EC reconcile before device loss'
         type: boolean
         default: false
 
@@ -34,6 +34,7 @@ jobs:
             REPRO_ATTEMPT=${{ matrix.attempt }} \
             RECONCILE_BEFORE_DEGRADE=${{ inputs.reconcile_before_degrade && '1' || '0' }} \
             BCACHEFS_RECONCILE_TIMEOUT=5m \
+            RECONCILE_DRIVER_RUNTIME=300 \
             BCACHEFS_EVAC_DIAG_AFTER=180 \
             BCACHEFS_EVAC_TIMEOUT=10m \
             scripts/repro-bcachefs-ec-evacuate.sh

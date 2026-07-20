@@ -62,10 +62,11 @@ The last point does not match the stripe-buffer exhaustion reported in issue
 second path to the same closure wait. The captured artifact is intended to let
 upstream distinguish those cases.
 
-A preliminary four-attempt control with `RECONCILE_BEFORE_DEGRADE=1` had one
-successful wait and three timeouts before any member was offlined. That points
-to an EC reconcile problem independent of device evacuation. The reproducer
-captures a full diagnostic snapshot when this optional barrier times out.
+An initial passive `RECONCILE_BEFORE_DEGRADE=1` control was invalid: three
+waits timed out because bcachefs reported an IO-clock wait while the test was
+idle. The current control drives direct reads during the optional barrier so
+the IO clock advances. It captures a full diagnostic snapshot if reconcile
+still fails to drain.
 
 ## Standalone reproducer
 
