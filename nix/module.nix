@@ -43,6 +43,11 @@ let
     name = "modern-fs-benchmark-run";
     runtimeInputs = benchmarkPackages;
     text = ''
+      if [[ $# -eq 1 && $1 == --capabilities ]]; then
+        echo hardware-random-scaling-v1
+        exit 0
+      fi
+
       if [[ $# -ne 10 ]]; then
         echo "usage: modern-fs-benchmark-run <run-id> <attempt> <fs> <layout> <dev-size> <aging-iters> <aging-io> <snap-count> <min-seq-mbps> <min-rand-iops>" >&2
         exit 2
@@ -161,6 +166,7 @@ let
       export SNAPSCALE_COUNT="$snap_count"
       export CALIB_MIN_SEQ_MBPS="$min_seq_mbps"
       export CALIB_MIN_RAND_IOPS="$min_rand_iops"
+      export BENCH_HARDWARE_RANDOM_SCALING=1
       export RESULTS_DIR="$results_dir"
 
       ${benchmark.package}/bin/modern-fs-benchmark "$fs" "$layout"

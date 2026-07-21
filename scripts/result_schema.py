@@ -98,6 +98,7 @@ def validate_document(document, schema, metrics):
             active_metrics = {
                 metric for metric, metric_spec in metrics.items()
                 if metric_spec.get("introduced", 1) <= version
+                and metric_spec.get("required", True)
             }
             missing_metrics = sorted(active_metrics - set(results))
             extra_metrics = sorted(set(results) - set(metrics))

@@ -76,6 +76,13 @@ METRIC_CONTRACT = [
     ("snapscale_delete_ms", "Delete 500 snapshots", "ms", "lower"),
 ]
 
+HARDWARE_METRIC_CONTRACT = [
+    ("randwrite8_iops", "Random write, 8 workers", "IOPS", "higher"),
+    ("randwrite16_iops", "Random write, 16 workers", "IOPS", "higher"),
+    ("randread8_iops", "Random read, 8 workers", "IOPS", "higher"),
+    ("randread16_iops", "Random read, 16 workers", "IOPS", "higher"),
+]
+
 
 def run_script(script, *args):
     return subprocess.run(
@@ -245,6 +252,31 @@ class DashboardRegressionTests(unittest.TestCase):
         self.assertEqual(data["runCount"], 3)
         self.assertEqual(len(data["runs"]), 2)
         self.assertTrue(data["runs"][0]["agg"])
+
+    def test_dashboard_only_exposes_hardware_metrics_when_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            runs = tmp / "runs"
+            shutil.copytree(FIXTURE_RUNS, runs)
+            result_path = runs / "101" / "result-btrfs-raid1.json"
+            document = json.loads(result_path.read_text())
+            for index, (key, _label, _unit, _better) in enumerate(
+                HARDWARE_METRIC_CONTRACT, start=1
+            ):
+                document["results"][key] = index * 1000
+            result_path.write_text(json.dumps(document))
+            output = tmp / "index.html"
+
+            result = run_script(DASHBOARD, "--runs", runs, "--out", output)
+            data = dashboard_data(output.read_text())
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        hardware_metrics = [
+            (metric["key"], metric["label"], metric["unit"], metric["better"])
+            for metric in data["metrics"]
+            if metric["key"] in {item[0] for item in HARDWARE_METRIC_CONTRACT}
+        ]
+        self.assertEqual(hardware_metrics, HARDWARE_METRIC_CONTRACT)
 
 
 class AuditRegressionTests(unittest.TestCase):
@@ -453,9 +485,19 @@ class ResultSchemaTests(unittest.TestCase):
                 for metric in metrics
                 if metric["display"] == "card"
             ],
-            METRIC_CONTRACT,
+            METRIC_CONTRACT[:3]
+            + HARDWARE_METRIC_CONTRACT[:2]
+            + METRIC_CONTRACT[3:7]
+            + HARDWARE_METRIC_CONTRACT[2:]
+            + METRIC_CONTRACT[7:],
         )
         self.assertEqual(len({metric["key"] for metric in metrics}), len(metrics))
+        optional = {
+            metric["key"]
+            for metric in metrics
+            if not metric.get("required", True)
+        }
+        self.assertEqual(optional, {metric[0] for metric in HARDWARE_METRIC_CONTRACT})
 
     def test_configurations_match_benchmark_matrix(self):
         schema = json.loads(SCHEMA.read_text())
@@ -652,6 +694,28 @@ class ResultSchemaTests(unittest.TestCase):
             result.stderr,
         )
 
+    def test_optional_hardware_metrics_are_validated_when_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result_file = Path(tmp) / "result.json"
+            document = json.loads(
+                (FIXTURE_RUNS / "101" / "result-btrfs-raid1.json").read_text()
+            )
+            for key, _label, _unit, _better in HARDWARE_METRIC_CONTRACT:
+                document["results"][key] = 1234.5
+            result_file.write_text(json.dumps(document))
+
+            valid = run_script(VALIDATOR, result_file)
+            document["results"]["randwrite8_iops"] = None
+            result_file.write_text(json.dumps(document))
+            invalid = run_script(VALIDATOR, result_file)
+
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        self.assertEqual(invalid.returncode, 1)
+        self.assertIn(
+            "document.results.randwrite8_iops: null is not allowed",
+            invalid.stderr,
+        )
+
     def test_missing_metric_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             result_file = Path(tmp) / "result.json"
@@ -747,6 +811,94 @@ printf '%s\n' "$SEQWRITE_MBPS"
             "--size=2G --end_fsync=1",
         )
 
+    def test_hosted_random_write_does_not_run_hardware_scaling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = r'''
+DATA=$2
+RUNTIME=30
+BENCH_DEVICES=
+log() { :; }
+fio_json() {
+  printf '%s\n' "$*" >> "$DATA/fio-calls"
+  printf '%s\n' "$DATA/fio.json"
+}
+jq() { printf '123.5\n'; }
+phase_random_write
+printf '%s %s\n' "$RANDWRITE8_IOPS" "$RANDWRITE16_IOPS"
+'''
+            result = run_benchmark_shell(source, tmp)
+            calls = (Path(tmp) / "fio-calls").read_text().splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "null null")
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(any("--numjobs=8" in call for call in calls))
+        self.assertFalse(any("--numjobs=16" in call for call in calls))
+
+    def test_hardware_random_write_runs_8_and_16_workers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = r'''
+DATA=$2
+RUNTIME=30
+BENCH_DEVICES=/dev/fake
+BENCH_HARDWARE_RANDOM_SCALING=1
+log() { :; }
+rm() { printf 'rm\n' >> "$DATA/events"; }
+fio_json() {
+  printf '%s\n' "$1" >> "$DATA/events"
+  printf '%s\n' "$*" >> "$DATA/fio-calls"
+  printf '%s\n' "$DATA/fio.json"
+}
+jq() { printf '123.5\n'; }
+phase_random_write
+printf '%s %s\n' "$RANDWRITE8_IOPS" "$RANDWRITE16_IOPS"
+'''
+            result = run_benchmark_shell(source, tmp)
+            calls = (Path(tmp) / "fio-calls").read_text().splitlines()
+            events = (Path(tmp) / "events").read_text().splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "123.5 123.5")
+        self.assertEqual(len(calls), 4)
+        self.assertTrue(any("--size=128M" in call and "--numjobs=8" in call for call in calls))
+        self.assertTrue(any("--size=64M" in call and "--numjobs=16" in call for call in calls))
+        self.assertEqual(
+            events,
+            [
+                "randwrite", "rm", "randwrite-par", "rm",
+                "randwrite-par8", "rm", "randwrite-par16", "rm",
+            ],
+        )
+
+    def test_hardware_random_read_runs_8_and_16_workers_cold(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = r'''
+DATA=$2
+READ_SIZE=2G
+RUNTIME=30
+BENCH_DEVICES=/dev/fake
+BENCH_HARDWARE_RANDOM_SCALING=1
+cache_drops=0
+log() { :; }
+fio() { :; }
+fs_drop_caches() { cache_drops=$((cache_drops + 1)); }
+fio_json() {
+  printf '%s\n' "$*" >> "$DATA/fio-calls"
+  printf '%s\n' "$DATA/fio.json"
+}
+jq() { printf '456.5\n'; }
+phase_random_read
+printf '%s %s %s\n' "$RANDREAD8_IOPS" "$RANDREAD16_IOPS" "$cache_drops"
+'''
+            result = run_benchmark_shell(source, tmp)
+            calls = (Path(tmp) / "fio-calls").read_text().splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "456.5 456.5 4")
+        self.assertEqual(len(calls), 4)
+        self.assertTrue(any("--io_size=64M" in call and "--numjobs=8" in call for call in calls))
+        self.assertTrue(any("--io_size=32M" in call and "--numjobs=16" in call for call in calls))
+
     def test_skipped_degraded_phase_resets_optional_metrics(self):
         source = r'''
 FS=ext4
@@ -841,10 +993,14 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("runs-on: [self-hosted, linux, x64, fs-benchmark]", workflow)
         self.assertIn("modern-fs-benchmark-run", workflow)
         self.assertIn("managed benchmark wrapper is not installed", workflow)
+        self.assertIn("--capabilities", workflow)
+        self.assertIn("hardware-random-scaling-v1", workflow)
         self.assertIn("$GITHUB_RUN_ID", workflow)
         self.assertIn("/var/lib/modern-fs-benchmark/results/", workflow)
         self.assertNotIn("scripts/install-deps.sh", workflow)
         self.assertIn("ENABLE_HARDWARE_BENCHMARKS", workflow)
+        for key, _label, _unit, _better in HARDWARE_METRIC_CONTRACT:
+            self.assertIn(key, workflow)
 
     def test_hosted_and_hardware_workflows_use_same_matrix(self):
         def matrix_profile(path):
@@ -894,6 +1050,9 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("zfsSingleDevice", module)
         self.assertIn("34359738368", module)
         self.assertIn("resolves to a duplicate block device", module)
+        self.assertIn("export BENCH_HARDWARE_RANDOM_SCALING=1", module)
+        self.assertIn("hardware-random-scaling-v1", module)
+        self.assertNotIn("BENCH_HARDWARE_RANDOM_SCALING", BENCH_WORKFLOW.read_text())
         self.assertNotIn("boot.supportedFilesystems", module)
         self.assertNotIn("results directory must be inside", module)
         self.assertIn("packages =", flake)

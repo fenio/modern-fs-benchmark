@@ -75,6 +75,10 @@ FS_VERSION=$(fs_version 2>/dev/null || true)
 log "$FS ($LAYOUT) mounted at $MNT, data dir $DATA${FS_VERSION:+ [$FS_VERSION]}"
 }
 
+hardware_random_scaling_enabled() {
+  [ "${BENCH_HARDWARE_RANDOM_SCALING:-0}" = 1 ] && [ -n "${BENCH_DEVICES:-}" ]
+}
+
 # --- Phase 1: sequential write -------------------------------------------
 phase_sequential_write() {
 local out
@@ -88,6 +92,8 @@ rm -f "$DATA"/seqwrite*
 # --- Phase 2: random write (fdatasync every 16 IOs) ----------------------
 phase_random_write() {
 local out
+RANDWRITE8_IOPS=null
+RANDWRITE16_IOPS=null
 log "phase: random write 4k, ${RUNTIME}s"
 out=$(fio_json randwrite --directory="$DATA" --rw=randwrite --bs=4k \
   --size=1G --runtime="$RUNTIME" --time_based --fdatasync=16)
@@ -105,11 +111,25 @@ out=$(fio_json randwrite-par --directory="$DATA" --rw=randwrite --bs=4k \
   --numjobs=4 --group_reporting)
 RANDWRITE4_IOPS=$(jq '.jobs[0].write.iops' "$out")
 rm -f "$DATA"/randwrite-par*
+if hardware_random_scaling_enabled; then
+  out=$(fio_json randwrite-par8 --directory="$DATA" --rw=randwrite --bs=4k \
+    --size=128M --runtime="$RUNTIME" --time_based --fdatasync=16 \
+    --numjobs=8 --group_reporting)
+  RANDWRITE8_IOPS=$(jq '.jobs[0].write.iops' "$out")
+  rm -f "$DATA"/randwrite-par8*
+  out=$(fio_json randwrite-par16 --directory="$DATA" --rw=randwrite --bs=4k \
+    --size=64M --runtime="$RUNTIME" --time_based --fdatasync=16 \
+    --numjobs=16 --group_reporting)
+  RANDWRITE16_IOPS=$(jq '.jobs[0].write.iops' "$out")
+  rm -f "$DATA"/randwrite-par16*
+fi
 }
 
 # --- Phase 3: random read (cold cache) ------------------------------------
 phase_random_read() {
 local out
+RANDREAD8_IOPS=null
+RANDREAD16_IOPS=null
 log "phase: random read 4k, ${RUNTIME}s"
 fio --name=readprep --filename="$DATA/read.dat" --rw=write --bs=1M \
   --size="$READ_SIZE" --end_fsync=1 --output=/dev/null
@@ -128,6 +148,16 @@ fs_drop_caches
 out=$(fio_json randread-par --filename="$DATA/read.dat" --rw=randread --bs=4k \
   --size="$READ_SIZE" --io_size=128M --numjobs=4 --group_reporting)
 RANDREAD4_IOPS=$(jq '.jobs[0].read.iops' "$out")
+if hardware_random_scaling_enabled; then
+  fs_drop_caches
+  out=$(fio_json randread-par8 --filename="$DATA/read.dat" --rw=randread --bs=4k \
+    --size="$READ_SIZE" --io_size=64M --numjobs=8 --group_reporting)
+  RANDREAD8_IOPS=$(jq '.jobs[0].read.iops' "$out")
+  fs_drop_caches
+  out=$(fio_json randread-par16 --filename="$DATA/read.dat" --rw=randread --bs=4k \
+    --size="$READ_SIZE" --io_size=32M --numjobs=16 --group_reporting)
+  RANDREAD16_IOPS=$(jq '.jobs[0].read.iops' "$out")
+fi
 }
 
 # --- Phase 3.4: sequential read (cold cache) --------------------------------
@@ -707,6 +737,8 @@ fi
 
 # --- Assemble result -------------------------------------------------------
 write_result() {
+local include_hardware_random_scaling=false
+hardware_random_scaling_enabled && include_hardware_random_scaling=true
 DEVICE_SIZE_BYTES=$(blockdev --getsize64 "${DEVICES[0]}")
 AGING_JSON=$(printf '%s\n' "${AGING_BW[@]}" | jq -s '.')
 if [ "${#SNAP_MS[@]}" -gt 0 ]; then
@@ -728,10 +760,14 @@ jq -n \
   --argjson device_size_bytes "$DEVICE_SIZE_BYTES" \
   --argjson seqwrite_mbps "$SEQWRITE_MBPS" \
   --argjson randwrite_iops "$RANDWRITE_IOPS" \
+  --argjson randwrite8_iops "$RANDWRITE8_IOPS" \
+  --argjson randwrite16_iops "$RANDWRITE16_IOPS" \
   --argjson fsync_p99_ms "$FSYNC_P99_MS" \
   --argjson fsync_p999_ms "$FSYNC_P999_MS" \
   --argjson randread_iops "$RANDREAD_IOPS" \
   --argjson randread4_iops "$RANDREAD4_IOPS" \
+  --argjson randread8_iops "$RANDREAD8_IOPS" \
+  --argjson randread16_iops "$RANDREAD16_IOPS" \
   --argjson seqread_mbps "$SEQREAD_MBPS" \
   --argjson lat_idle_p99_ms "$LAT_IDLE_P99" \
   --argjson lat_load_p99_ms "$LAT_LOAD_P99" \
@@ -785,12 +821,13 @@ jq -n \
   --argjson data_intact "$DATA_INTACT" \
   --argjson calib_seqwrite_mbps "$CALIB_SEQ_MBPS" \
   --argjson calib_randwrite_iops "$CALIB_RAND_IOPS" \
+  --argjson include_hardware_random_scaling "$include_hardware_random_scaling" \
   '{schema_version: 4,
     fs: $fs, layout: $layout, kernel: $kernel, version: $version, date: $date,
     devices: $devices, ndev: $ndev, device_size_bytes: $device_size_bytes,
     calibration: {seqwrite_mbps: $calib_seqwrite_mbps,
                   randwrite_iops: $calib_randwrite_iops},
-    results: {seqwrite_mbps: $seqwrite_mbps,
+    results: ({seqwrite_mbps: $seqwrite_mbps,
               randwrite_iops: $randwrite_iops,
               fsync_p99_ms: $fsync_p99_ms,
               fsync_p999_ms: $fsync_p999_ms,
@@ -846,7 +883,13 @@ jq -n \
               scrub_s: $scrub_s,
               scrub_found: $scrub_found,
               scrub_repaired: $scrub_repaired,
-              data_intact: $data_intact}}' \
+              data_intact: $data_intact} +
+              (if $include_hardware_random_scaling then {
+                randwrite8_iops: $randwrite8_iops,
+                randwrite16_iops: $randwrite16_iops,
+                randread8_iops: $randread8_iops,
+                randread16_iops: $randread16_iops
+              } else {} end))}' \
   > "$RESULT_FILE"
 
 python3 "$SCRIPT_DIR/validate-result.py" "$RESULT_FILE"
