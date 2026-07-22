@@ -68,6 +68,33 @@ DOCS = {
         "single-thread card: scaling well above 1x is parallelism, below 1x is lock "
         "contention. Phase 2.",
         [("run-bench.sh (Phase 2)", "scripts/run-bench.sh")]),
+    "randwrite8_iops": (
+        "The hardware-only Phase 2 random-write workload with --numjobs=8, 128M per "
+        "worker, and fdatasync every 16 IOs. The aggregate working set remains 1G. "
+        "This metric is not collected on hosted GitHub runners.",
+        [("run-bench.sh (Phase 2)", "scripts/run-bench.sh")]),
+    "randwrite16_iops": (
+        "The hardware-only Phase 2 random-write workload with --numjobs=16, 64M per "
+        "worker, and fdatasync every 16 IOs. The aggregate working set remains 1G. "
+        "This metric is not collected on hosted GitHub runners.",
+        [("run-bench.sh (Phase 2)", "scripts/run-bench.sh")]),
+    "randwrite4_sharded_iops": (
+        "The hardware-only 4-worker random-write workload with fio process mode and "
+        "create_serialize=0. Each worker creates and preallocates its own 256M file, "
+        "allowing PID-sharded filesystems to distribute inode and extent btree keys. "
+        "The aggregate working set remains 1G; files are removed and synced between "
+        "worker counts.",
+        [("run-bench.sh (Phase 2)", "scripts/run-bench.sh")]),
+    "randwrite8_sharded_iops": (
+        "The shard-aware hardware-only random-write workload with 8 worker processes, "
+        "create_serialize=0, and one worker-created 128M file per process. The aggregate "
+        "working set remains 1G.",
+        [("run-bench.sh (Phase 2)", "scripts/run-bench.sh")]),
+    "randwrite16_sharded_iops": (
+        "The shard-aware hardware-only random-write workload with 16 worker processes, "
+        "create_serialize=0, and one worker-created 64M file per process. The aggregate "
+        "working set remains 1G.",
+        [("run-bench.sh (Phase 2)", "scripts/run-bench.sh")]),
     "smalltree_create4_ms": (
         "The 20k-file tree created by 4 concurrent workers on disjoint directory "
         "subsets — metadata lock contention (btrfs tree locks vs XFS per-AG "
@@ -99,6 +126,16 @@ DOCS = {
         "serve reads from both copies under concurrency — a single dependent-read stream "
         "cannot show replica read-scaling. On CI loop devices all replicas share one "
         "physical disk, so the bandwidth win only appears on real hardware.",
+        [("run-bench.sh (Phase 3)", "scripts/run-bench.sh")]),
+    "randread8_iops": (
+        "The hardware-only cold-cache random-read workload with --numjobs=8 and a "
+        "64M single-pass allocation per worker, preserving 512M aggregate IO. "
+        "This metric is not collected on hosted GitHub runners.",
+        [("run-bench.sh (Phase 3)", "scripts/run-bench.sh")]),
+    "randread16_iops": (
+        "The hardware-only cold-cache random-read workload with --numjobs=16 and a "
+        "32M single-pass allocation per worker, preserving 512M aggregate IO. "
+        "This metric is not collected on hosted GitHub runners.",
         [("run-bench.sh (Phase 3)", "scripts/run-bench.sh")]),
     "seqread_mbps": (
         "fio sequential 1M reads over the 2G file, one full pass (no looping — a time-based run re-reads cached blocks and reports RAM speed), cold cache. Phase 3.4.",
@@ -322,11 +359,16 @@ DOCS = {
 }
 
 with open(os.path.join(os.path.dirname(__file__), "result-schema.json")) as fh:
+    metric_specs = json.load(fh)["metrics"]
     METRICS = [
         (metric["key"], metric["label"], metric["unit"], metric["better"])
-        for metric in json.load(fh)["metrics"]
+        for metric in metric_specs
         if metric["display"] == "card"
     ]
+    OPTIONAL_METRICS = {
+        metric["key"] for metric in metric_specs
+        if not metric.get("required", True)
+    }
 
 
 def load_runs(runs_dir):
@@ -428,6 +470,13 @@ def main():
         print(f"no result JSON found under {args.runs}", file=sys.stderr)
         sys.exit(1)
 
+    available_metrics = {
+        key
+        for run in runs
+        for result in run["results"].values()
+        for key in result
+    }
+
     # "Latest" view: per-entity, the newest run that actually has data
     # (looking back up to 5 runs) — a mid-rerun deploy or a failed job
     # shouldn't punch holes in the front page. Entities not from the
@@ -453,12 +502,14 @@ def main():
         "metrics": [
             {"key": k, "label": l, "unit": u, "better": b}
             for k, l, u, b in METRICS
+            if k not in OPTIONAL_METRICS or k in available_metrics
         ],
         "runs": runs,
         "runCount": run_count,
         "repo": args.repo,
         "docs": {k: {"text": t, "src": [{"label": l, "url": SRC + p} for l, p in s]}
-                 for k, (t, s) in DOCS.items()},
+                 for k, (t, s) in DOCS.items()
+                 if k not in OPTIONAL_METRICS or k in available_metrics},
     }
     html = TEMPLATE.replace("__DATA__", json.dumps(data, separators=(",", ":")))
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)

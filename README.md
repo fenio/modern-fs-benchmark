@@ -212,6 +212,9 @@ The four member devices and spare must each be exactly 16 GiB. The dedicated
 For an unregistered manual run, the same immutable package is available as
 `nix run .#manual -- <fs> <layout>`; provide the documented `BENCH_*`
 environment variables and run it as root.
+Set `BENCH_HARDWARE_RANDOM_SCALING=1` to include the optional 8- and 16-worker
+random read/write measurements and the 4/8/16-worker shard-aware write series
+that the managed hardware wrapper enables.
 
 The master cluster flake owns the node assignment and deploy-rs deployment, so
 the runner can move to another machine without changing benchmark code. The
