@@ -235,8 +235,30 @@ rotational data disks (bcachefs foreground/background targets, ZFS
 special/log/cache vdevs, LVM dm-cache with writeback and writethrough),
 mixed-rotational RAID, and how each setup behaves degraded and while
 rebuilding. Same suite, same JSON, same dashboard — only the device lists and
-topology descriptions change. If you have hardware or topology suggestions,
-open an issue.
+topology descriptions change.
+
+#### Supporting real-hardware runs
+
+Regular mixed-media runs depend on access to a machine whose benchmark devices
+may be wiped. A suitable dedicated server currently costs approximately
+**€70 per month**, depending on availability and its exact disk configuration.
+If recurring sponsorship covers that cost, the server specification,
+configuration, raw results, and command traces will all remain public.
+
+I am also open to hardware support in other forms:
+
+- remote root access to an isolated Linux machine with clearly identified,
+  wipeable HDD, SSD, or NVMe devices;
+- donated disks, components, or a complete server for a self-hosted runner;
+- hosting for donated hardware.
+
+If a suitable remote server does not become available, I may eventually build
+and host a runner myself as the budget allows. Financial support is available
+through [GitHub Sponsors](https://github.com/sponsors/fenio) and
+[Ko-fi](https://ko-fi.com/fenio). To offer hardware or discuss a topology,
+[open an issue](https://github.com/fenio/modern-fs-benchmark/issues). Sponsors
+and hardware providers can be acknowledged if they wish, but do not receive
+editorial control over the methodology or results.
 
 ### Locally (Linux, loop devices)
 
