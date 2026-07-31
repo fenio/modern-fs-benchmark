@@ -1072,6 +1072,7 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("/var/lib/modern-fs-benchmark/results/", workflow)
         self.assertNotIn("scripts/install-deps.sh", workflow)
         self.assertIn("ENABLE_HARDWARE_BENCHMARKS", workflow)
+        self.assertIn("max-parallel: 1", workflow)
         for key, _label, _unit, _better in HARDWARE_METRIC_CONTRACT:
             self.assertIn(key, workflow)
 
@@ -1125,6 +1126,8 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("resolves to a duplicate block device", module)
         self.assertIn("export BENCH_HARDWARE_RANDOM_SCALING=1", module)
         self.assertIn("hardware-random-scaling-v2", module)
+        self.assertIn('/run/wrappers/bin/sudo', module)
+        self.assertIn('CapabilityBoundingSet = lib.mkForce [ "~" ]', module)
         self.assertNotIn("BENCH_HARDWARE_RANDOM_SCALING", BENCH_WORKFLOW.read_text())
         self.assertNotIn("boot.supportedFilesystems", module)
         self.assertNotIn("results directory must be inside", module)

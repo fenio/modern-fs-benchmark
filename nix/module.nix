@@ -172,6 +172,9 @@ let
       ${benchmark.package}/bin/modern-fs-benchmark "$fs" "$layout"
     '';
   };
+  sudoShim = pkgs.writeShellScriptBin "sudo" ''
+    exec /run/wrappers/bin/sudo "$@"
+  '';
 in
 {
   options.services.modern-fs-benchmark = {
@@ -299,10 +302,10 @@ in
       ephemeral = cfg.ephemeral;
       user = "modern-fs-benchmark";
       group = "modern-fs-benchmark";
-      extraPackages = benchmarkPackages ++ [ runBenchmark ];
+      extraPackages = benchmarkPackages ++ [ runBenchmark sudoShim ];
       serviceOverrides = {
         AmbientCapabilities = lib.mkForce null;
-        CapabilityBoundingSet = lib.mkForce null;
+        CapabilityBoundingSet = lib.mkForce [ "~" ];
         DeviceAllow = lib.mkForce null;
         NoNewPrivileges = lib.mkForce false;
         PrivateDevices = lib.mkForce false;
