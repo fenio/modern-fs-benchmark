@@ -177,6 +177,8 @@ class DashboardRegressionTests(unittest.TestCase):
         )
         latest = data["latest"]["results"]
         self.assertEqual(latest["ext4/single"]["seqwrite_mbps"], 510.2)
+        self.assertEqual(latest["ext4/single"]["kernel"], "6.17.0-fixture")
+        self.assertEqual(latest["bcachefs/replicas2"]["kernel"], "6.18.0-fixture")
         self.assertEqual(latest["btrfs/raid1"]["aging_mbps"], [42.0, 39.5, 37.0])
         self.assertIsNone(latest["zfs/mirror"]["reflink_ms"])
         self.assertIsNone(latest["bcachefs/replicas2"]["scrub_found"])
@@ -214,6 +216,7 @@ class DashboardRegressionTests(unittest.TestCase):
             html.index('content.appendChild(el("h2", {}, "Latest run"));'),
         )
         self.assertIn("Explore trends", html)
+        self.assertIn('label: "kernel"', html)
         self.assertIn("content.appendChild(buildExplorer(view));", html)
         self.assertIn(
             "https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js",

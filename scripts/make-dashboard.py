@@ -390,6 +390,7 @@ def load_runs(runs_dir):
             entity = f"{doc['fs']}/{doc['layout']}"
             entry = dict(doc.get("results", {}))
             entry["calibration"] = doc.get("calibration")
+            entry["kernel"] = doc.get("kernel") or None
             entry["version"] = doc.get("version") or None
             results[entity] = entry
             dates.append(doc.get("date", ""))
@@ -1395,6 +1396,7 @@ const cols = [
    get: (e, r, c) => r.enospc_recover_ok == null ? null : (r.enospc_recover_ok ? "yes" : "NO")},
   {label: "calib seq", unit: "MB/s", get: (e, r, c) => c.seqwrite_mbps},
   {label: "calib rand", unit: "IOPS", get: (e, r, c) => c.randwrite_iops},
+  {label: "kernel", str: true, get: (e, r, c) => r.kernel},
   {label: "tools / module version", str: true, get: (e, r, c) => r.version},
 ];
 let sortCol = null, sortDir = 1;  // null = matrix order
