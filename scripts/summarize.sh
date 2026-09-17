@@ -5,7 +5,17 @@ set -euo pipefail
 
 echo "### Filesystem benchmark results"
 echo
-echo "Loop-device numbers are only meaningful *relative to each other within one run* — see README."
+profile=
+for f in "$@"; do
+  [ -f "$f" ] || continue
+  profile=$(jq -r '.hardware_profile // empty' "$f")
+  break
+done
+if [ -n "$profile" ]; then
+  echo "Real-hardware profile: \`$profile\`."
+else
+  echo "Loop-device numbers are only meaningful *relative to each other within one run* — see README."
+fi
 echo
 echo "| fs | layout | kernel | seq write MB/s | rand write IOPS | fsync p99.9 ms | rand read IOPS | snap create ms | snap delete ms | reclaim s | aging MB/s (first → last) | zstd ratio | zstd write MB/s | reflink ms | degraded wr IOPS | rebuild s | scrub s | data intact | 99% full MB/s | del@100% |"
 echo "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"

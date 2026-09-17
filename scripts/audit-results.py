@@ -73,6 +73,8 @@ def main():
     parser.add_argument("runs_dir", nargs="?", default="data/runs")
     parser.add_argument("--allow-partial", action="store_true",
                         help="do not require every configured matrix entity")
+    parser.add_argument("--expected-hardware-profile",
+                        help="require every result to carry this hardware profile")
     args = parser.parse_args()
     runs_dir = args.runs_dir
     run_dirs = sorted(glob.glob(os.path.join(runs_dir, "*")),
@@ -89,6 +91,16 @@ def main():
             with open(f) as fh:
                 d = json.load(fh)
             ent = f"{d.get('fs', '?')}/{d.get('layout', os.path.basename(f))}"
+            if args.expected_hardware_profile is not None and d.get(
+                "hardware_profile"
+            ) != args.expected_hardware_profile:
+                print(
+                    f"{f}: hardware_profile must be "
+                    f"{args.expected_hardware_profile!r}, got "
+                    f"{d.get('hardware_profile')!r}",
+                    file=sys.stderr,
+                )
+                return 1
             results = d.get("results", {})
             if isinstance(results, dict):
                 for k, v in results.items():

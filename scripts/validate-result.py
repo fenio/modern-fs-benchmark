@@ -19,6 +19,10 @@ def main(argv=None):
         action="store_true",
         help="require exactly one result for every configured matrix entity",
     )
+    parser.add_argument(
+        "--expected-hardware-profile",
+        help="require every result to carry this hardware profile",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -39,8 +43,21 @@ def main(argv=None):
             continue
         fs = document.get("fs") if isinstance(document, dict) else None
         layout = document.get("layout") if isinstance(document, dict) else None
+        profile = (
+            document.get("hardware_profile") if isinstance(document, dict) else None
+        )
         if isinstance(fs, str) and isinstance(layout, str):
             entities.append(f"{fs}/{layout}")
+        if (
+            args.expected_hardware_profile is not None
+            and profile != args.expected_hardware_profile
+        ):
+            print(
+                f"{path}: hardware_profile must be "
+                f"{args.expected_hardware_profile!r}, got {profile!r}",
+                file=sys.stderr,
+            )
+            failed = True
         for error in validate_document(document, schema, metrics):
             print(f"{path}: {error}", file=sys.stderr)
             failed = True

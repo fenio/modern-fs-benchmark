@@ -785,6 +785,8 @@ jq -n \
   --arg version "$FS_VERSION" \
   --arg date "$(date -u +%FT%TZ)" \
   --arg devices "${BENCH_DEVICES:-loop}" \
+  --arg hardware_profile "${BENCH_HARDWARE_PROFILE:-}" \
+  --arg benchmark_revision "${BENCH_REVISION:-}" \
   --argjson ndev "${#DEVICES[@]}" \
   --argjson device_size_bytes "$DEVICE_SIZE_BYTES" \
   --argjson seqwrite_mbps "$SEQWRITE_MBPS" \
@@ -854,7 +856,7 @@ jq -n \
   --argjson calib_seqwrite_mbps "$CALIB_SEQ_MBPS" \
   --argjson calib_randwrite_iops "$CALIB_RAND_IOPS" \
   --argjson include_hardware_random_scaling "$include_hardware_random_scaling" \
-  '{schema_version: 5,
+  '({schema_version: 5,
     fs: $fs, layout: $layout, kernel: $kernel, version: $version, date: $date,
     devices: $devices, ndev: $ndev, device_size_bytes: $device_size_bytes,
     calibration: {seqwrite_mbps: $calib_seqwrite_mbps,
@@ -924,7 +926,11 @@ jq -n \
                 randwrite16_sharded_iops: $randwrite16_sharded_iops,
                 randread8_iops: $randread8_iops,
                 randread16_iops: $randread16_iops
-              } else {} end))}' \
+              } else {} end))} +
+    (if $hardware_profile == "" then {}
+     else {hardware_profile: $hardware_profile} end) +
+    (if $benchmark_revision == "" then {}
+     else {benchmark_revision: $benchmark_revision} end))' \
   > "$RESULT_FILE"
 
 python3 "$SCRIPT_DIR/validate-result.py" "$RESULT_FILE"

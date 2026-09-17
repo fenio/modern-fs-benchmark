@@ -2,7 +2,7 @@ name: publish-pages
 
 on:
   workflow_run:
-    workflows: [fs-bench, fs-bench-real-hw]
+    workflows: [fs-bench, fs-bench-real-hw, fs-bench-real-hw-sas-hdd]
     types: [completed]
   workflow_dispatch:
 
@@ -52,13 +52,46 @@ jobs:
             exit "$status"
           fi
 
+      - name: Check out sas-hdd result history
+        id: sas-hdd-history
+        continue-on-error: true
+        run: |
+          set +e
+          git ls-remote --exit-code --heads origin results-real-hw-sas-hdd >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch origin results-real-hw-sas-hdd
+            git worktree add sas-hdd-data origin/results-real-hw-sas-hdd
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 2 ]; then
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "failed to query results-real-hw-sas-hdd (git exit $status)" >&2
+            exit "$status"
+          fi
+
       - name: Build dashboards
         run: |
           python3 scripts/make-dashboard.py --runs standard-data/runs --out site/index.html \
             --repo "https://github.com/${{ github.repository }}"
           if compgen -G "hardware-data/runs/*/result-*.json" >/dev/null; then
             python3 scripts/make-dashboard.py --runs hardware-data/runs --out site/real-hw/index.html \
-              --repo "https://github.com/${{ github.repository }}"
+              --repo "https://github.com/${{ github.repository }}" \
+              --hardware-profile farm3 --expected-hardware-profile farm3 \
+              --allow-missing-hardware-profile --history-branch results-real-hw
+          fi
+
+      - name: Build sas-hdd dashboard
+        if: steps.sas-hdd-history.outputs.present == 'true'
+        continue-on-error: true
+        run: |
+          if compgen -G "sas-hdd-data/runs/*/result-*.json" >/dev/null; then
+            python3 scripts/make-dashboard.py --runs sas-hdd-data/runs \
+              --out site/sas-hdd/index.html \
+              --repo "https://github.com/${{ github.repository }}" \
+              --hardware-profile sas-hdd --expected-hardware-profile sas-hdd \
+              --history-branch results-real-hw-sas-hdd
           fi
 
       - uses: actions/configure-pages@v6

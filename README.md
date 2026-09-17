@@ -194,6 +194,7 @@ networking, users, or partitioning.
     repository = "https://github.com/fenio/modern-fs-benchmark";
     tokenFile = "/run/secrets/modern-fs-benchmark-runner";
     runnerName = "farm3";
+    hardwareProfile = "farm3";
     runnerLabels = [ "fs-benchmark" ];
     devices = [
       "/dev/disk/by-partlabel/fsbench-nvme0-a"
@@ -219,13 +220,21 @@ that the managed hardware wrapper enables.
 The master cluster flake owns the node assignment and deploy-rs deployment, so
 the runner can move to another machine without changing benchmark code. The
 dedicated `bench-real-hw.yml` workflow targets the `fs-benchmark` label and
-uses only the module's fixed devices. It publishes hardware history to
+uses only the module's fixed devices. It publishes the farm3 history to
 `results-real-hw` and the dashboard under `/real-hw/`; the existing `bench.yml`
 workflow remains hosted-only and continues publishing `results-data` at the
 root dashboard. Hardware runs can be dispatched manually. The weekly schedule
 is enabled only when the repository variable `ENABLE_HARDWARE_BENCHMARKS` is
 set to `true`. The token file should contain a fine-grained PAT because
 ephemeral runners re-register after every job.
+
+The rotational `sas-hdd` profile is routed independently through the
+`fs-benchmark-sas-hdd` runner label. Its workflow, enable variable, history,
+and dashboard are respectively `bench-real-hw-sas-hdd.yml`,
+`ENABLE_SAS_HDD_BENCHMARKS`, `results-real-hw-sas-hdd`, and
+`/sas-hdd/`. Every result carries `hardware_profile: "sas-hdd"`, and
+publication rejects a missing or mismatched profile so results from different
+machines cannot enter the same trend series.
 
 **The plan is bigger than loop devices.** CI is the regression-tracking
 harness; the goal is to gather dedicated hardware and run the REAL tests
@@ -361,5 +370,6 @@ Copyright 2026 Bartosz Fenski.
 
 Source code, configuration, workflows, and documentation are licensed under the
 [Apache License 2.0](LICENSE). Published benchmark result datasets, including
-the `results-data` and `results-real-hw` history branches, are licensed under
+the `results-data`, `results-real-hw`, and `results-real-hw-sas-hdd` history
+branches, are licensed under
 [Creative Commons Attribution 4.0 International](LICENSE-DATA).

@@ -2,6 +2,9 @@
 """Generate the static results dashboard (single self-contained index.html).
 
 Usage: make-dashboard.py --runs <dir> --out <file> [--repo <url>]
+                         [--hardware-profile <name>]
+                         [--expected-hardware-profile <name>]
+                         [--history-branch <name>]
 
 <dir> holds one subdirectory per benchmark run, each containing the
 result-<fs>-<layout>.json files produced by run-bench.sh. Files directly in
@@ -371,7 +374,8 @@ with open(os.path.join(os.path.dirname(__file__), "result-schema.json")) as fh:
     }
 
 
-def load_runs(runs_dir):
+def load_runs(runs_dir, expected_hardware_profile=None,
+              allow_missing_hardware_profile=False):
     runs = []
     subdirs = sorted(
         d for d in glob.glob(os.path.join(runs_dir, "*")) if os.path.isdir(d)
@@ -387,6 +391,16 @@ def load_runs(runs_dir):
         for f in sorted(files):
             with open(f) as fh:
                 doc = json.load(fh)
+            actual_profile = doc.get("hardware_profile")
+            if (expected_hardware_profile is not None
+                    and actual_profile != expected_hardware_profile
+                    and not (allow_missing_hardware_profile
+                             and actual_profile is None)):
+                raise ValueError(
+                    f"{f}: hardware_profile must be "
+                    f"{expected_hardware_profile!r}, got "
+                    f"{actual_profile!r}"
+                )
             entity = f"{doc['fs']}/{doc['layout']}"
             entry = dict(doc.get("results", {}))
             entry["calibration"] = doc.get("calibration")
@@ -459,11 +473,29 @@ def main():
     ap.add_argument("--runs", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--repo", default="https://github.com/fenio/modern-fs-benchmark")
+    ap.add_argument("--hardware-profile",
+                    help="identify the real-hardware profile displayed")
+    ap.add_argument("--expected-hardware-profile",
+                    help="reject results from any other hardware profile")
+    ap.add_argument("--allow-missing-hardware-profile", action="store_true",
+                    help="accept legacy results with no profile, but reject conflicts")
+    ap.add_argument("--history-branch", default="results-data")
     ap.add_argument("--window", type=int, default=100,
                     help="newest runs kept raw; older collapsed to daily medians")
     args = ap.parse_args()
+    if (args.hardware_profile and args.expected_hardware_profile
+            and args.hardware_profile != args.expected_hardware_profile):
+        ap.error("displayed and expected hardware profiles must match")
 
-    raw_runs = load_runs(args.runs)
+    try:
+        raw_runs = load_runs(
+            args.runs,
+            args.expected_hardware_profile,
+            args.allow_missing_hardware_profile,
+        )
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        sys.exit(1)
     run_count = len(raw_runs)
     runs = collapse_old(raw_runs, args.window)
     if not runs:
@@ -507,6 +539,8 @@ def main():
         "runs": runs,
         "runCount": run_count,
         "repo": args.repo,
+        "hardwareProfile": args.hardware_profile or args.expected_hardware_profile,
+        "historyBranch": args.history_branch,
         "docs": {k: {"text": t, "src": [{"label": l, "url": SRC + p} for l, p in s]}
                  for k, (t, s) in DOCS.items()
                  if k not in OPTIONAL_METRICS or k in available_metrics},
@@ -1443,13 +1477,15 @@ const app = document.getElementById("app");
 const dt = (latest.date || "").replace("T", " ").replace("Z", " UTC");
 const runSummary = `${DATA.runCount} run${DATA.runCount === 1 ? "" : "s"} recorded` +
   (DATA.runCount === DATA.runs.length ? "" : ` · ${DATA.runs.length} trend points shown`);
-app.appendChild(el("h1", {}, "modern-fs-benchmark"));
+app.appendChild(el("h1", {}, "modern-fs-benchmark" +
+  (DATA.hardwareProfile ? ` · ${DATA.hardwareProfile}` : "")));
 app.appendChild(el("p", {class: "sub"},
   `Multi-device CoW filesystems under workloads classic benchmarks skip —
    latest run ${dt}, kernel ${latest.kernel}, ${runSummary}
    · <a href="${DATA.repo}">repository</a>`));
-app.appendChild(el("p", {class: "note"},
-  "CI runs use loop devices on shared ephemeral VMs (one VM per filesystem): compare shapes and ratios, not absolute MB/s. Each job records a host-calibration anchor — see the table."));
+app.appendChild(el("p", {class: "note"}, DATA.hardwareProfile
+  ? `Dedicated real-hardware profile: ${DATA.hardwareProfile}. Results from other hardware profiles are published separately.`
+  : "CI runs use loop devices on shared ephemeral VMs (one VM per filesystem): compare shapes and ratios, not absolute MB/s. Each job records a host-calibration anchor — see the table."));
 
 const chipBtns = new Map();
 const famBtns = new Map();
@@ -1574,7 +1610,7 @@ function rebuild() {
       "Recorded once — trend lines appear as more runs accumulate (2-hourly cron + every push)."));
   } else {
     content.appendChild(el("p", {class: "note"},
-      "One card per metric, one point per run — the newest 100 runs individually, older runs collapsed to daily medians (full history on the results-data branch). Drag on a chart to zoom, double-click to reset; the y-axis rescales to what's visible."));
+      `One card per metric, one point per run — the newest 100 runs individually, older runs collapsed to daily medians (full history on the ${DATA.historyBranch} branch). Drag on a chart to zoom, double-click to reset; the y-axis rescales to what's visible.`));
     const rangeBar = el("div", {class: "filters", style: "margin-top:0"});
     [["24h", 1], ["7 days", 7], ["30 days", 30], ["all", 0]].forEach(([label, days]) => {
       const b = el("button", {class: "fbtn", type: "button",

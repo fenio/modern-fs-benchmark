@@ -8,6 +8,8 @@
     "version": {"type": "string"},
     "date": {"type": "string", "nonempty": true},
     "devices": {"type": "string", "nonempty": true},
+    "hardware_profile": {"type": "string", "nonempty": true, "required": false},
+    "benchmark_revision": {"type": "string", "nonempty": true, "required": false},
     "ndev": {"type": "integer", "nonnegative": true},
     "device_size_bytes": {"type": "integer", "nonnegative": true, "required": false},
     "calibration": {

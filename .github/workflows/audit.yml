@@ -28,3 +28,34 @@ jobs:
         run: |
           set -o pipefail
           python3 scripts/audit-results.py data/runs | tee -a "$GITHUB_STEP_SUMMARY"
+
+  audit-sas-hdd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fetch sas-hdd result history
+        id: history
+        run: |
+          set +e
+          git ls-remote --exit-code --heads origin results-real-hw-sas-hdd >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch origin results-real-hw-sas-hdd
+            git worktree add sas-hdd-data origin/results-real-hw-sas-hdd
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 2 ]; then
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "failed to query results-real-hw-sas-hdd (git exit $status)" >&2
+            exit "$status"
+          fi
+
+      - name: Audit sas-hdd results
+        if: steps.history.outputs.present == 'true'
+        run: |
+          set -o pipefail
+          python3 scripts/audit-results.py sas-hdd-data/runs \
+            --expected-hardware-profile sas-hdd | tee -a "$GITHUB_STEP_SUMMARY"

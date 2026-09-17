@@ -1,0 +1,201 @@
+name: fs-bench-real-hw-sas-hdd
+
+on:
+  schedule:
+    # Keep this independent from farm3 and bound wear on the HDD profile.
+    - cron: '43 3 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: fs-bench-real-hw-sas-hdd
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_SAS_HDD_BENCHMARKS == 'true'
+    runs-on: [self-hosted, linux, x64, fs-benchmark-sas-hdd]
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - fs: ext4
+            layout: single
+          - fs: ext4
+            layout: md-raid10
+          - fs: ext4
+            layout: lvm-raid10
+            aging_iters: 8
+          - fs: xfs
+            layout: single
+          - fs: xfs
+            layout: md-raid10
+          - fs: xfs
+            layout: lvm-raid10
+            aging_iters: 8
+          - fs: xfs
+            layout: zvol
+            aging_iters: 25
+          - fs: xfs
+            layout: lvm-raid10-int
+            aging_iters: 8
+          - fs: ext4
+            layout: md-raid6
+          - fs: btrfs
+            layout: raid1
+          - fs: btrfs
+            layout: raid6
+          - fs: btrfs
+            layout: single
+          - fs: zfs
+            layout: mirror
+            aging_iters: 10
+          - fs: zfs
+            layout: mirror-8k
+          - fs: zfs
+            layout: single
+            dev_size: 32G
+            aging_iters: 10
+          - fs: zfs
+            layout: raidz2
+            aging_iters: 10
+          - fs: zfs
+            layout: raidz1
+            aging_iters: 10
+          - fs: zfs
+            layout: raidz1-enc
+            aging_iters: 10
+          - fs: zfs
+            layout: raidz2-enc
+            aging_iters: 10
+          - fs: bcachefs
+            layout: replicas2
+          - fs: bcachefs
+            layout: single
+          - fs: bcachefs
+            layout: ec
+          - fs: zfs
+            layout: mirror-enc
+            aging_iters: 10
+          - fs: bcachefs
+            layout: replicas2-enc
+          - fs: btrfs
+            layout: raid1-luks
+          - fs: ext4
+            layout: md-raid10-luks
+    env:
+      DEV_SIZE: ${{ matrix.dev_size || '16G' }}
+      AGING_ITERS: ${{ matrix.aging_iters || '100' }}
+      AGING_IO: 64M
+      SNAPSCALE_COUNT: 500
+      CALIB_MIN_SEQ_MBPS: 20
+      CALIB_MIN_RAND_IOPS: 100
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run benchmark through managed wrapper
+        run: |
+          runner=$(command -v modern-fs-benchmark-run) || {
+            echo 'managed benchmark wrapper is not installed' >&2
+            exit 1
+          }
+          sudo "$runner" --revision "${{ github.sha }}" --capabilities | grep -qx hardware-random-scaling-v2 || {
+            echo 'managed benchmark wrapper does not support hardware random scaling' >&2
+            exit 1
+          }
+          sudo "$runner" --revision "${{ github.sha }}" --capabilities | grep -qx hardware-profile:sas-hdd || {
+            echo 'managed benchmark wrapper is not assigned to sas-hdd' >&2
+            exit 1
+          }
+          sudo "$runner" \
+            --revision "${{ github.sha }}" \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "${{ matrix.fs }}" "${{ matrix.layout }}" \
+            "$DEV_SIZE" "$AGING_ITERS" "$AGING_IO" "$SNAPSCALE_COUNT" \
+            "$CALIB_MIN_SEQ_MBPS" "$CALIB_MIN_RAND_IOPS"
+          mkdir -p results
+          cp -a "/var/lib/modern-fs-benchmark/results/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/${{ matrix.fs }}-${{ matrix.layout }}/." results/
+
+      - name: Write job summary
+        if: always()
+        run: scripts/summarize.sh results/result-*.json >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sas-hdd-results-${{ matrix.fs }}-${{ matrix.layout }}
+          path: results/
+          if-no-files-found: ignore
+
+  publish:
+    name: Store sas-hdd results
+    needs: bench
+    if: ${{ !cancelled() && needs.bench.result != 'skipped' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    concurrency:
+      group: results-real-hw-sas-hdd
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: sas-hdd-results-*
+          path: incoming
+          merge-multiple: true
+
+      - name: Validate complete sas-hdd result set
+        run: >-
+          python3 scripts/validate-result.py
+          --complete-set
+          --expected-hardware-profile sas-hdd
+          incoming/result-*.json
+
+      - name: Verify hardware provenance
+        run: |
+          jq -e -s --arg expected_revision "${{ github.sha }}" \
+            'all(.[];
+              .hardware_profile == "sas-hdd" and
+              .benchmark_revision == $expected_revision and
+              (.devices | type == "string" and startswith("/dev/disk/by-id/")) and
+              ([.results.randwrite8_iops, .results.randwrite16_iops,
+                .results.randwrite4_sharded_iops,
+                .results.randwrite8_sharded_iops,
+                .results.randwrite16_sharded_iops,
+                .results.randread8_iops, .results.randread16_iops] |
+               all(.[]; type == "number" and . >= 0)))' \
+            incoming/result-*.json >/dev/null
+
+      - name: Append results to sas-hdd history branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set +e
+          git ls-remote --exit-code --heads origin results-real-hw-sas-hdd >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch origin results-real-hw-sas-hdd
+            git worktree add sas-hdd-data origin/results-real-hw-sas-hdd
+            git -C sas-hdd-data checkout -B results-real-hw-sas-hdd
+          elif [ "$status" -eq 2 ]; then
+            git worktree add --detach sas-hdd-data
+            git -C sas-hdd-data checkout --orphan results-real-hw-sas-hdd
+            git -C sas-hdd-data rm -rf --quiet . || true
+          else
+            echo "failed to query results-real-hw-sas-hdd (git exit $status)" >&2
+            exit "$status"
+          fi
+          mkdir -p "sas-hdd-data/runs/${{ github.run_id }}"
+          cp incoming/result-*.json "sas-hdd-data/runs/${{ github.run_id }}/"
+          cp LICENSE-DATA sas-hdd-data/LICENSE
+          git -C sas-hdd-data add LICENSE runs
+          git -C sas-hdd-data commit -m "sas-hdd results from run ${{ github.run_id }}" || echo "nothing new"
+          git -C sas-hdd-data push origin results-real-hw-sas-hdd

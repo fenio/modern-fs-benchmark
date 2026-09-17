@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -17,6 +18,7 @@ AUDIT = ROOT / "scripts" / "audit-results.py"
 SCHEMA = ROOT / "scripts" / "result-schema.json"
 VALIDATOR = ROOT / "scripts" / "validate-result.py"
 RUN_BENCH = ROOT / "scripts" / "run-bench.sh"
+MANAGED_HARDWARE_RUNNER = ROOT / "scripts" / "managed-hardware-runner.sh"
 XFS_BACKEND = ROOT / "scripts" / "fs" / "xfs.sh"
 ZFS_BACKEND = ROOT / "scripts" / "fs" / "zfs.sh"
 BCACHEFS_BACKEND = ROOT / "scripts" / "fs" / "bcachefs.sh"
@@ -25,6 +27,9 @@ BCACHEFS_REPRO = ROOT / "scripts" / "repro-bcachefs-ec-evacuate.sh"
 BENCH_WORKFLOW = ROOT / ".github" / "workflows" / "bench.yml"
 HARDWARE_BENCH_WORKFLOW = (
     ROOT / ".github" / "workflows" / "bench-real-hw.yml"
+)
+SAS_HDD_BENCH_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "bench-real-hw-sas-hdd.yml"
 )
 PAGES_WORKFLOW = ROOT / ".github" / "workflows" / "publish-pages.yml"
 BCACHEFS_REPRO_WORKFLOW = (
@@ -189,6 +194,8 @@ class DashboardRegressionTests(unittest.TestCase):
             "tools 1.38.1 / module 1.38.1",
         )
         self.assertEqual(data["repo"], "https://example.test/fsbench")
+        self.assertIsNone(data["hardwareProfile"])
+        self.assertEqual(data["historyBranch"], "results-data")
         self.assertIn('href="https://github.com/nasty-project/nasty"', html)
         for legacy_section in (
             "Latest run",
@@ -296,6 +303,38 @@ class DashboardRegressionTests(unittest.TestCase):
             if metric["key"] in {item[0] for item in HARDWARE_METRIC_CONTRACT}
         ]
         self.assertEqual(hardware_metrics, HARDWARE_METRIC_CONTRACT)
+
+    def test_dashboard_allows_missing_legacy_profile_but_rejects_conflicts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            output = Path(tmp) / "index.html"
+            shutil.copytree(FIXTURE_RUNS, runs)
+            args = (
+                "--runs",
+                runs,
+                "--out",
+                output,
+                "--hardware-profile",
+                "farm3",
+                "--expected-hardware-profile",
+                "farm3",
+                "--allow-missing-hardware-profile",
+            )
+
+            legacy = run_script(DASHBOARD, *args)
+            legacy_data = dashboard_data(output.read_text())
+            conflicting_file = runs / "101" / "result-btrfs-raid1.json"
+            document = json.loads(conflicting_file.read_text())
+            document["hardware_profile"] = "sas-hdd"
+            conflicting_file.write_text(json.dumps(document))
+            conflicting = run_script(DASHBOARD, *args)
+
+        self.assertEqual(legacy.returncode, 0, legacy.stderr)
+        self.assertEqual(legacy_data["hardwareProfile"], "farm3")
+        self.assertEqual(conflicting.returncode, 1)
+        self.assertIn(
+            "hardware_profile must be 'farm3', got 'sas-hdd'", conflicting.stderr
+        )
 
 
 class AuditRegressionTests(unittest.TestCase):
@@ -630,6 +669,34 @@ class ResultSchemaTests(unittest.TestCase):
             result.stderr,
         )
 
+    def test_expected_hardware_profile_is_enforced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result_file = Path(tmp) / "result.json"
+            document = json.loads(
+                (FIXTURE_RUNS / "101" / "result-btrfs-raid1.json").read_text()
+            )
+            document["hardware_profile"] = "sas-hdd"
+            result_file.write_text(json.dumps(document))
+
+            accepted = run_script(
+                VALIDATOR,
+                "--expected-hardware-profile",
+                "sas-hdd",
+                result_file,
+            )
+            rejected = run_script(
+                VALIDATOR,
+                "--expected-hardware-profile",
+                "farm3",
+                result_file,
+            )
+
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn(
+            "hardware_profile must be 'farm3', got 'sas-hdd'", rejected.stderr
+        )
+
     def test_history_publication_requires_complete_result_set(self):
         workflow = BENCH_WORKFLOW.read_text()
 
@@ -647,6 +714,7 @@ class ResultSchemaTests(unittest.TestCase):
     def test_hardware_results_use_separate_history_and_dashboard(self):
         hosted = BENCH_WORKFLOW.read_text()
         hardware = HARDWARE_BENCH_WORKFLOW.read_text()
+        sas_hdd = SAS_HDD_BENCH_WORKFLOW.read_text()
         pages = PAGES_WORKFLOW.read_text()
 
         self.assertIn("git -C data push origin results-data", hosted)
@@ -663,6 +731,24 @@ class ResultSchemaTests(unittest.TestCase):
         self.assertIn("standard-data/runs", pages)
         self.assertIn("hardware-data/runs", pages)
         self.assertIn("site/real-hw/index.html", pages)
+        self.assertIn("results-real-hw-sas-hdd", sas_hdd)
+        self.assertNotIn("results-data", sas_hdd)
+        self.assertIn(
+            "git -C sas-hdd-data push origin results-real-hw-sas-hdd", sas_hdd
+        )
+        self.assertIn("hardware-profile:sas-hdd", sas_hdd)
+        self.assertIn("--expected-hardware-profile sas-hdd", sas_hdd)
+        self.assertIn("sas-hdd-data/runs", pages)
+        self.assertIn("site/sas-hdd/index.html", pages)
+        self.assertNotIn("site/real-hw/sas-hdd/index.html", pages)
+        self.assertIn("id: sas-hdd-history", pages)
+        self.assertIn(
+            "if: steps.sas-hdd-history.outputs.present == 'true'", pages
+        )
+        self.assertGreaterEqual(pages.count("continue-on-error: true"), 2)
+        self.assertIn("--expected-hardware-profile farm3", pages)
+        self.assertIn("--allow-missing-hardware-profile", pages)
+        self.assertIn("--expected-hardware-profile sas-hdd", pages)
         self.assertLess(
             pages.index("actions/upload-pages-artifact"),
             pages.index("actions/deploy-pages"),
@@ -789,7 +875,7 @@ class ResultSchemaTests(unittest.TestCase):
 
     def test_benchmark_emits_current_schema_version(self):
         schema_version = json.loads(SCHEMA.read_text())["schema_version"]
-        match = re.search(r"'\{schema_version: (\d+),", RUN_BENCH.read_text())
+        match = re.search(r"'\(\{schema_version: (\d+),", RUN_BENCH.read_text())
 
         self.assertIsNotNone(match)
         self.assertEqual(int(match.group(1)), schema_version)
@@ -1076,6 +1162,53 @@ class BackendConfigurationTests(unittest.TestCase):
         for key, _label, _unit, _better in HARDWARE_METRIC_CONTRACT:
             self.assertIn(key, workflow)
 
+    def test_sas_hdd_workflow_is_profile_isolated(self):
+        workflow = SAS_HDD_BENCH_WORKFLOW.read_text()
+
+        self.assertIn(
+            "runs-on: [self-hosted, linux, x64, fs-benchmark-sas-hdd]",
+            workflow,
+        )
+        self.assertNotIn(
+            "runs-on: [self-hosted, linux, x64, fs-benchmark]", workflow
+        )
+        self.assertIn("ENABLE_SAS_HDD_BENCHMARKS", workflow)
+        self.assertIn("hardware-profile:sas-hdd", workflow)
+        self.assertIn('--revision "${{ github.sha }}"', workflow)
+        self.assertIn('.benchmark_revision == $expected_revision', workflow)
+        self.assertIn("results-real-hw-sas-hdd", workflow)
+        self.assertIn('startswith("/dev/disk/by-id/")', workflow)
+
+    def test_sas_hdd_provisioning_and_launcher_enforce_safety_boundary(self):
+        provisioner = (ROOT / "contrib" / "sas-hdd" / "provision-storage.sh").read_text()
+        launcher = (ROOT / "contrib" / "sas-hdd" / "modern-fs-benchmark-run").read_text()
+
+        self.assertIn("FORBIDDEN_OS_DISK=/dev/sda", provisioner)
+        self.assertIn("lsblk -snrpo NAME", provisioner)
+        self.assertIn('/sys/class/block/$node/holders/*', provisioner)
+        self.assertIn("swapon --show=NAME", provisioner)
+        self.assertIn("zpool status -LP", provisioner)
+        self.assertIn("partprobe", provisioner)
+        self.assertIn("--check", provisioner)
+        self.assertLess(
+            provisioner.index("if (( check_only ))"),
+            provisioner.index("wipefs --all"),
+        )
+        self.assertIn('wipefs --all --force "${device}-part1"', provisioner)
+        self.assertIn("! -user root -o -perm /022", launcher)
+        self.assertIn("-type l", launcher)
+        self.assertIn("installed_revision", launcher)
+        self.assertIn("MANAGED_DEVICE_SIZE_BYTES=17179869184", launcher)
+
+        refused = subprocess.run(
+            [str(ROOT / "contrib" / "sas-hdd" / "provision-storage.sh")],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "CONFIRM_DESTROY_SAS_HDD": "wrong"},
+        )
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("refusing", refused.stderr)
+
     def test_hosted_and_hardware_workflows_use_same_matrix(self):
         def matrix_profile(path):
             workflow = path.read_text()
@@ -1103,13 +1236,16 @@ class BackendConfigurationTests(unittest.TestCase):
 
         hosted = matrix_profile(BENCH_WORKFLOW)
         hardware = matrix_profile(HARDWARE_BENCH_WORKFLOW)
+        sas_hdd = matrix_profile(SAS_HDD_BENCH_WORKFLOW)
 
         self.assertEqual(len(hosted), 26)
         self.assertEqual(hardware, hosted)
+        self.assertEqual(sas_hdd, hosted)
 
     def test_nixos_module_keeps_machine_policy_in_cluster_configuration(self):
         flake = FLAKE.read_text()
         module = NIXOS_MODULE.read_text()
+        managed = MANAGED_HARDWARE_RUNNER.read_text()
 
         self.assertIn("nixosModules.modern-fs-benchmark", flake)
         self.assertIn("config.boot.kernelPackages.bcachefs", module)
@@ -1120,12 +1256,14 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("config.boot.zfs.package", module)
         self.assertIn("config.boot.zfs.modulePackage", module)
         self.assertIn('[ "dm_raid" "dm_snapshot" "dm_integrity" ]', module)
-        self.assertIn("another filesystem benchmark is already running", module)
+        self.assertIn("another filesystem benchmark is already running", managed)
         self.assertIn("zfsSingleDevice", module)
-        self.assertIn("34359738368", module)
-        self.assertIn("resolves to a duplicate block device", module)
-        self.assertIn("export BENCH_HARDWARE_RANDOM_SCALING=1", module)
-        self.assertIn("hardware-random-scaling-v2", module)
+        self.assertIn("34359738368", managed)
+        self.assertIn("resolves to a duplicate block device", managed)
+        self.assertIn("export BENCH_HARDWARE_RANDOM_SCALING=1", managed)
+        self.assertIn("hardware-random-scaling-v2", managed)
+        self.assertIn("BENCH_HARDWARE_PROFILE", managed)
+        self.assertIn("hardwareProfile", module)
         self.assertIn('/run/wrappers/bin/sudo', module)
         self.assertIn('CapabilityBoundingSet = lib.mkForce [ "~" ]', module)
         self.assertNotIn("BENCH_HARDWARE_RANDOM_SCALING", BENCH_WORKFLOW.read_text())
