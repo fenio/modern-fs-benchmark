@@ -1275,11 +1275,24 @@ class BackendConfigurationTests(unittest.TestCase):
     def test_real_device_validation_precedes_signature_wipe(self):
         common = (ROOT / "scripts" / "lib" / "common.sh").read_text()
 
+        stale_cleanup = common.index("    remove_stale_benchmark_mappings")
         validation = common.index('[ -b "$dev" ]')
         mount_check = common.index('is mounted — refusing')
         wipe = common.index('wipefs --all --force "$dev"')
+        self.assertLess(stale_cleanup, validation)
         self.assertLess(validation, wipe)
         self.assertLess(mount_check, wipe)
+
+    def test_lvm_mapping_cleanup_retries_after_udev_settles(self):
+        common = (ROOT / "scripts" / "lib" / "common.sh").read_text()
+        layered = (ROOT / "scripts" / "lib" / "layered.sh").read_text()
+
+        self.assertIn('dmsetup remove --retry "${d##*/}"', common)
+        self.assertIn('/sys/class/block/$node/holders/$holder', common)
+        self.assertLess(
+            layered.index("udevadm settle"),
+            layered.index('dmsetup remove --retry "${d##*/}"'),
+        )
 
 
 if __name__ == "__main__":

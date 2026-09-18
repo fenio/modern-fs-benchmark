@@ -139,9 +139,36 @@ fs_scrub() { return 1; }
 # says nothing about what was actually tested.
 fs_version() { echo ""; }
 
+remove_stale_benchmark_mappings() {
+  local d holder device node owned
+  for d in /dev/mapper/fsbench-pv*; do
+    [ -e "$d" ] || continue
+    holder=$(readlink -f "$d")
+    holder=${holder##*/}
+    owned=0
+    for device in "$@"; do
+      [ -n "$device" ] || continue
+      node=$(readlink -f "$device")
+      node=${node##*/}
+      if [ -e "/sys/class/block/$node/holders/$holder" ]; then
+        owned=1
+        break
+      fi
+    done
+    [ "$owned" = 1 ] \
+      || die "mapping $d is not attached to a configured benchmark device"
+    dmsetup remove --retry "${d##*/}" 2>/dev/null \
+      || die "stale benchmark mapping $d is still busy"
+  done
+}
+
 # Populate DEVICES[] — real devices from BENCH_DEVICES, or loop devices.
 setup_devices() {
   if [ -n "${BENCH_DEVICES:-}" ]; then
+    local -a configured_devices
+    read -ra configured_devices <<< "$BENCH_DEVICES"
+    remove_stale_benchmark_mappings \
+      "${configured_devices[@]}" "${BENCH_SPARE_DEVICE:-}"
     if [ "${FS:-}/${LAYOUT:-}" = zfs/single ] && [ -n "${BENCH_ZFS_SINGLE_DEVICE:-}" ]; then
       BENCH_DEVICES=$BENCH_ZFS_SINGLE_DEVICE
     fi
