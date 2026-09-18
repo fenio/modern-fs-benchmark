@@ -219,10 +219,12 @@ layered_teardown() {
       ;;
     lvm-*)
       vgremove -fy "$VG" 2>/dev/null || true
+      udevadm settle 2>/dev/null || true
       local d
       for d in /dev/mapper/fsbench-pv*; do
         if [ -e "$d" ]; then
-          dmsetup remove "${d##*/}" 2>/dev/null || true
+          dmsetup remove --retry "${d##*/}" 2>/dev/null \
+            || log "WARNING: failed to remove benchmark mapping $d"
         fi
       done
       ;;
