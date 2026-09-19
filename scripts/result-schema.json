@@ -10,6 +10,8 @@
     "devices": {"type": "string", "nonempty": true},
     "hardware_profile": {"type": "string", "nonempty": true, "required": false},
     "benchmark_revision": {"type": "string", "nonempty": true, "required": false},
+    "benchmark_scenario": {"type": "string", "nonempty": true, "required": false},
+    "topology": {"type": "string", "nonempty": true, "required": false},
     "ndev": {"type": "integer", "nonnegative": true},
     "device_size_bytes": {"type": "integer", "nonnegative": true, "required": false},
     "calibration": {
@@ -48,6 +50,13 @@
     "bcachefs/replicas2-enc": ["snapshots", "compression", "reflink", "degraded", "scrub", "snapscale", "enospc"],
     "btrfs/raid1-luks": ["snapshots", "compression", "reflink", "scrub", "scrub_counts", "snapscale", "enospc"],
     "ext4/md-raid10-luks": ["degraded", "scrub", "scrub_counts", "enospc"]
+  },
+  "scenario_configurations": {
+    "hybrid-tier-v1": {
+      "btrfs/hybrid-dmcache": ["snapshots", "compression", "reflink", "snapscale"],
+      "zfs/hybrid-special-l2arc": ["snapshots", "compression", "reflink", "snapscale"],
+      "bcachefs/hybrid-native": ["snapshots", "compression", "reflink", "snapscale"]
+    }
   },
   "metrics": [
     {"key": "seqwrite_mbps", "type": "number", "label": "Sequential write", "unit": "MB/s", "better": "higher", "display": "card", "nonnegative": true},

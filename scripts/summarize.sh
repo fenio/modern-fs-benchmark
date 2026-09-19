@@ -3,14 +3,20 @@
 # Usage: summarize.sh results/result-*.json
 set -euo pipefail
 
-echo "### Filesystem benchmark results"
-echo
 profile=
+scenario=
 for f in "$@"; do
   [ -f "$f" ] || continue
   profile=$(jq -r '.hardware_profile // empty' "$f")
+  scenario=$(jq -r '.benchmark_scenario // empty' "$f")
   break
 done
+if [ -n "$scenario" ]; then
+  echo "### Filesystem benchmark results — $scenario"
+else
+  echo "### Filesystem benchmark results"
+fi
+echo
 if [ -n "$profile" ]; then
   echo "Real-hardware profile: \`$profile\`."
 else

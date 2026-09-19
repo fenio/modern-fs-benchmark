@@ -236,6 +236,11 @@ and dashboard are respectively `bench-real-hw-sas-hdd.yml`,
 publication rejects a missing or mismatched profile so results from different
 machines cannot enter the same trend series.
 
+The separate [`hybrid-tier-v1`](docs/sas-hdd-hybrid-tier.md) scenario compares
+Btrfs over mirrored `dm-cache`, ZFS special/L2ARC classes, and native bcachefs
+foreground/background/promote targets. It publishes independently under
+`/sas-hdd/hybrid-tier/` and never expands the default hosted matrix.
+
 **The plan is bigger than loop devices.** CI is the regression-tracking
 harness; the goal is to gather dedicated hardware and run the REAL tests
 there — including the tiered topologies these filesystems were built for and

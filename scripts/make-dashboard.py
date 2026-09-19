@@ -4,6 +4,7 @@
 Usage: make-dashboard.py --runs <dir> --out <file> [--repo <url>]
                          [--hardware-profile <name>]
                          [--expected-hardware-profile <name>]
+                         [--expected-benchmark-scenario <name>]
                          [--history-branch <name>]
 
 <dir> holds one subdirectory per benchmark run, each containing the
@@ -375,7 +376,8 @@ with open(os.path.join(os.path.dirname(__file__), "result-schema.json")) as fh:
 
 
 def load_runs(runs_dir, expected_hardware_profile=None,
-              allow_missing_hardware_profile=False):
+              allow_missing_hardware_profile=False,
+              expected_benchmark_scenario=None):
     runs = []
     subdirs = sorted(
         d for d in glob.glob(os.path.join(runs_dir, "*")) if os.path.isdir(d)
@@ -400,6 +402,14 @@ def load_runs(runs_dir, expected_hardware_profile=None,
                     f"{f}: hardware_profile must be "
                     f"{expected_hardware_profile!r}, got "
                     f"{actual_profile!r}"
+                )
+            actual_scenario = doc.get("benchmark_scenario")
+            if (expected_benchmark_scenario is not None
+                    and actual_scenario != expected_benchmark_scenario):
+                raise ValueError(
+                    f"{f}: benchmark_scenario must be "
+                    f"{expected_benchmark_scenario!r}, got "
+                    f"{actual_scenario!r}"
                 )
             entity = f"{doc['fs']}/{doc['layout']}"
             entry = dict(doc.get("results", {}))
@@ -479,6 +489,15 @@ def main():
                     help="reject results from any other hardware profile")
     ap.add_argument("--allow-missing-hardware-profile", action="store_true",
                     help="accept legacy results with no profile, but reject conflicts")
+    ap.add_argument("--expected-benchmark-scenario",
+                    help="reject results from any other benchmark scenario")
+    ap.add_argument(
+        "--setup-detail",
+        action="append",
+        default=[],
+        metavar="LABEL=VALUE",
+        help="add a labeled testbed or topology detail at the top of the dashboard",
+    )
     ap.add_argument("--history-branch", default="results-data")
     ap.add_argument("--window", type=int, default=100,
                     help="newest runs kept raw; older collapsed to daily medians")
@@ -486,12 +505,19 @@ def main():
     if (args.hardware_profile and args.expected_hardware_profile
             and args.hardware_profile != args.expected_hardware_profile):
         ap.error("displayed and expected hardware profiles must match")
+    setup_details = []
+    for detail in args.setup_detail:
+        label, separator, value = detail.partition("=")
+        if not separator or not label.strip() or not value.strip():
+            ap.error("--setup-detail must be a nonempty LABEL=VALUE pair")
+        setup_details.append({"label": label.strip(), "value": value.strip()})
 
     try:
         raw_runs = load_runs(
             args.runs,
             args.expected_hardware_profile,
             args.allow_missing_hardware_profile,
+            args.expected_benchmark_scenario,
         )
     except ValueError as exc:
         print(exc, file=sys.stderr)
@@ -540,6 +566,8 @@ def main():
         "runCount": run_count,
         "repo": args.repo,
         "hardwareProfile": args.hardware_profile or args.expected_hardware_profile,
+        "benchmarkScenario": args.expected_benchmark_scenario,
+        "setupDetails": setup_details,
         "historyBranch": args.history_branch,
         "docs": {k: {"text": t, "src": [{"label": l, "url": SRC + p} for l, p in s]}
                  for k, (t, s) in DOCS.items()
@@ -588,6 +616,15 @@ h2 { font-size: 15px; font-weight: 650; margin: 40px 0 4px; }
 .sub { color: var(--ink-2); margin-top: 4px; }
 .sub a { color: inherit; }
 .note { color: var(--muted); font-size: 12.5px; margin: 2px 0 14px; }
+.setup { margin-top: 18px; padding: 14px 16px; }
+.setup h2 { margin: 0 0 10px; }
+.setup dl { display: grid; grid-template-columns: minmax(110px, 0.18fr) 1fr; gap: 7px 18px; }
+.setup dt { color: var(--muted); font-size: 12.5px; font-weight: 650; }
+.setup dd { color: var(--ink-2); font-size: 12.5px; }
+@media (max-width: 720px) {
+  .setup dl { grid-template-columns: 1fr; gap: 2px; }
+  .setup dd + dt { margin-top: 7px; }
+}
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 18px 0 6px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 13px; }
 .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
@@ -1478,14 +1515,32 @@ const dt = (latest.date || "").replace("T", " ").replace("Z", " UTC");
 const runSummary = `${DATA.runCount} run${DATA.runCount === 1 ? "" : "s"} recorded` +
   (DATA.runCount === DATA.runs.length ? "" : ` · ${DATA.runs.length} trend points shown`);
 app.appendChild(el("h1", {}, "modern-fs-benchmark" +
-  (DATA.hardwareProfile ? ` · ${DATA.hardwareProfile}` : "")));
+  (DATA.hardwareProfile ? ` · ${DATA.hardwareProfile}` : "") +
+  (DATA.benchmarkScenario ? ` · ${DATA.benchmarkScenario}` : "")));
 app.appendChild(el("p", {class: "sub"},
   `Multi-device CoW filesystems under workloads classic benchmarks skip —
    latest run ${dt}, kernel ${latest.kernel}, ${runSummary}
    · <a href="${DATA.repo}">repository</a>`));
-app.appendChild(el("p", {class: "note"}, DATA.hardwareProfile
+app.appendChild(el("p", {class: "note"},
+  (DATA.benchmarkScenario ? `Benchmark scenario: ${DATA.benchmarkScenario}. ` : "") +
+  (DATA.hardwareProfile
   ? `Dedicated real-hardware profile: ${DATA.hardwareProfile}. Results from other hardware profiles are published separately.`
-  : "CI runs use loop devices on shared ephemeral VMs (one VM per filesystem): compare shapes and ratios, not absolute MB/s. Each job records a host-calibration anchor — see the table."));
+  : "CI runs use loop devices on shared ephemeral VMs (one VM per filesystem): compare shapes and ratios, not absolute MB/s. Each job records a host-calibration anchor — see the table.")));
+if (DATA.setupDetails.length) {
+  const setup = el("section", {class: "card setup"});
+  setup.appendChild(el("h2", {}, "Test setup"));
+  const details = el("dl");
+  DATA.setupDetails.forEach(detail => {
+    const term = el("dt");
+    const description = el("dd");
+    term.textContent = detail.label;
+    description.textContent = detail.value;
+    details.appendChild(term);
+    details.appendChild(description);
+  });
+  setup.appendChild(details);
+  app.appendChild(setup);
+}
 
 const chipBtns = new Map();
 const famBtns = new Map();

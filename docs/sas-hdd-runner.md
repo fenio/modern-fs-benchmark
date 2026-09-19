@@ -27,6 +27,11 @@ Actions jobs must never be allowed to supply raw device paths. This preserves
 baseline comparability while allowing experiments that hosted runners cannot
 represent.
 
+The first such design is documented in
+[`sas-hdd-hybrid-tier.md`](sas-hdd-hybrid-tier.md). It compares a layered
+Btrfs cache, ZFS special/L2ARC classes, and native bcachefs targets under one
+fixed eight-HDD/three-SSD physical budget.
+
 ## Hardware
 
 - CPU: Intel Xeon E5-2640 v4, 10 cores / 20 threads
@@ -102,9 +107,13 @@ sudo install -d -o root -g root -m 0755 /opt/modern-fs-benchmark
 sudo cp -a "$staging/." /opt/modern-fs-benchmark/
 sudo chown -R root:root /opt/modern-fs-benchmark
 sudo chmod -R go-w /opt/modern-fs-benchmark
+sudo chmod 0755 /opt/modern-fs-benchmark
 sudo install -o root -g root -m 0755 \
   /opt/modern-fs-benchmark/contrib/sas-hdd/modern-fs-benchmark-run \
   /usr/local/sbin/modern-fs-benchmark-run
+sudo install -o root -g root -m 0755 \
+  /opt/modern-fs-benchmark/contrib/sas-hdd/modern-fs-benchmark-hybrid-tier-run \
+  /usr/local/sbin/modern-fs-benchmark-hybrid-tier-run
 rm -rf "$staging"
 ```
 
@@ -116,6 +125,7 @@ sudo install -d -o root -g root -m 0755 /var/lib/modern-fs-benchmark/results
 sudo install -o root -g root -m 0440 /dev/stdin \
   /etc/sudoers.d/modern-fs-benchmark <<'EOF'
 actions-runner ALL=(root) NOPASSWD: /usr/local/sbin/modern-fs-benchmark-run *
+actions-runner ALL=(root) NOPASSWD:NOSETENV: /usr/local/sbin/modern-fs-benchmark-hybrid-tier-run *
 EOF
 sudo visudo -cf /etc/sudoers.d/modern-fs-benchmark
 ```
