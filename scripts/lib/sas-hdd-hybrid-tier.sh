@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Topology lifecycle for the isolated sas-hdd hybrid-tier-v1 scenario.
 # The caller must install its cleanup trap before invoking hybrid_prepare.
-# shellcheck disable=SC2034,SC2329
+# shellcheck disable=SC2034,SC2317,SC2329
 
 HYBRID_VG=fsbench_hybrid
 HYBRID_MD_HDD=/dev/md/fsbench-hybrid-hdd
