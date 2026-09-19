@@ -75,6 +75,11 @@ def main():
                         help="do not require every configured matrix entity")
     parser.add_argument("--expected-hardware-profile",
                         help="require every result to carry this hardware profile")
+    parser.add_argument("--expected-benchmark-scenario",
+                        help="require every result to carry this benchmark scenario")
+    parser.add_argument("--expected-configuration", action="append",
+                        metavar="FS/LAYOUT",
+                        help="configuration required in the latest run (repeatable)")
     args = parser.parse_args()
     runs_dir = args.runs_dir
     run_dirs = sorted(glob.glob(os.path.join(runs_dir, "*")),
@@ -101,6 +106,16 @@ def main():
                     file=sys.stderr,
                 )
                 return 1
+            if args.expected_benchmark_scenario is not None and d.get(
+                "benchmark_scenario"
+            ) != args.expected_benchmark_scenario:
+                print(
+                    f"{f}: benchmark_scenario must be "
+                    f"{args.expected_benchmark_scenario!r}, got "
+                    f"{d.get('benchmark_scenario')!r}",
+                    file=sys.stderr,
+                )
+                return 1
             results = d.get("results", {})
             if isinstance(results, dict):
                 for k, v in results.items():
@@ -116,10 +131,17 @@ def main():
     }
     schema, metric_schema = load_schema()
     configurations = schema.get("configurations", {})
+    if args.expected_benchmark_scenario is not None:
+        scenario_configurations = schema.get("scenario_configurations", {}).get(
+            args.expected_benchmark_scenario
+        )
+        if isinstance(scenario_configurations, dict):
+            configurations = scenario_configurations
     hard, warn = [], []
 
     if not args.allow_partial:
-        missing = sorted(set(configurations) - set(latest_docs))
+        expected = set(args.expected_configuration or configurations)
+        missing = sorted(expected - set(latest_docs))
         if missing:
             hard.append(f"latest run missing configurations: {', '.join(missing)}")
 

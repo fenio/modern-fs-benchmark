@@ -766,9 +766,14 @@ fi
 
 # --- Assemble result -------------------------------------------------------
 write_result() {
-local include_hardware_random_scaling=false
+local include_hardware_random_scaling=false include_device_size=true
 hardware_random_scaling_enabled && include_hardware_random_scaling=true
-DEVICE_SIZE_BYTES=$(blockdev --getsize64 "${DEVICES[0]}")
+if [ "${BENCH_RESULT_DEVICE_SIZE_BYTES:-}" = omit ]; then
+  include_device_size=false
+  DEVICE_SIZE_BYTES=0
+else
+  DEVICE_SIZE_BYTES=${BENCH_RESULT_DEVICE_SIZE_BYTES:-$(blockdev --getsize64 "${DEVICES[0]}")}
+fi
 AGING_JSON=$(printf '%s\n' "${AGING_BW[@]}" | jq -s '.')
 if [ "${#SNAP_MS[@]}" -gt 0 ]; then
   # median, not mean — VM clock steps can corrupt individual samples
@@ -784,10 +789,12 @@ jq -n \
   --arg kernel "$(uname -r)" \
   --arg version "$FS_VERSION" \
   --arg date "$(date -u +%FT%TZ)" \
-  --arg devices "${BENCH_DEVICES:-loop}" \
+  --arg devices "${BENCH_RESULT_DEVICES:-${BENCH_DEVICES:-loop}}" \
   --arg hardware_profile "${BENCH_HARDWARE_PROFILE:-}" \
   --arg benchmark_revision "${BENCH_REVISION:-}" \
-  --argjson ndev "${#DEVICES[@]}" \
+  --arg benchmark_scenario "${BENCH_SCENARIO:-}" \
+  --arg topology "${BENCH_TOPOLOGY:-}" \
+  --argjson ndev "${BENCH_RESULT_NDEV:-${#DEVICES[@]}}" \
   --argjson device_size_bytes "$DEVICE_SIZE_BYTES" \
   --argjson seqwrite_mbps "$SEQWRITE_MBPS" \
   --argjson randwrite_iops "$RANDWRITE_IOPS" \
@@ -856,9 +863,10 @@ jq -n \
   --argjson calib_seqwrite_mbps "$CALIB_SEQ_MBPS" \
   --argjson calib_randwrite_iops "$CALIB_RAND_IOPS" \
   --argjson include_hardware_random_scaling "$include_hardware_random_scaling" \
+  --argjson include_device_size "$include_device_size" \
   '({schema_version: 5,
     fs: $fs, layout: $layout, kernel: $kernel, version: $version, date: $date,
-    devices: $devices, ndev: $ndev, device_size_bytes: $device_size_bytes,
+    devices: $devices, ndev: $ndev,
     calibration: {seqwrite_mbps: $calib_seqwrite_mbps,
                   randwrite_iops: $calib_randwrite_iops},
     results: ({seqwrite_mbps: $seqwrite_mbps,
@@ -926,11 +934,17 @@ jq -n \
                 randwrite16_sharded_iops: $randwrite16_sharded_iops,
                 randread8_iops: $randread8_iops,
                 randread16_iops: $randread16_iops
-              } else {} end))} +
+               } else {} end))} +
+    (if $include_device_size then {device_size_bytes: $device_size_bytes}
+     else {} end) +
     (if $hardware_profile == "" then {}
      else {hardware_profile: $hardware_profile} end) +
     (if $benchmark_revision == "" then {}
-     else {benchmark_revision: $benchmark_revision} end))' \
+     else {benchmark_revision: $benchmark_revision} end) +
+    (if $benchmark_scenario == "" then {}
+     else {benchmark_scenario: $benchmark_scenario} end) +
+    (if $topology == "" then {}
+     else {topology: $topology} end))' \
   > "$RESULT_FILE"
 
 python3 "$SCRIPT_DIR/validate-result.py" "$RESULT_FILE"
