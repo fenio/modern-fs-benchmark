@@ -23,7 +23,7 @@ else
   echo "Loop-device numbers are only meaningful *relative to each other within one run* — see README."
 fi
 echo
-echo "| fs | layout | kernel | seq write MB/s | rand write IOPS | fsync p99.9 ms | rand read IOPS | snap create ms | snap delete ms | reclaim s | aging MB/s (first → last) | zstd ratio | zstd write MB/s | reflink ms | degraded wr IOPS | rebuild s | scrub s | data intact | 99% full MB/s | del@100% |"
+echo "| fs | layout | kernel | seq write MiB/s | rand write IOPS | fsync p99.9 ms | rand read IOPS | snap create ms | snap delete ms | reclaim s | aging MiB/s (first → last) | zstd ratio | zstd write MiB/s | reflink ms | degraded wr IOPS | rebuild s | scrub s | data intact | 99% full MiB/s | del@100% |"
 echo "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
 
 for f in "$@"; do

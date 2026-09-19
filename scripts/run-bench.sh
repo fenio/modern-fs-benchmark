@@ -53,10 +53,10 @@ out=$(fio_json calib-randwrite --directory="$DISK_DIR" --rw=randwrite --bs=4k \
   --size=256M --runtime=15 --time_based --fdatasync=16)
 CALIB_RAND_IOPS=$(jq '.jobs[0].write.iops' "$out")
 rm -f "$DISK_DIR"/calib-*.0.0
-log "calibration: seq ${CALIB_SEQ_MBPS%.*} MB/s, rand ${CALIB_RAND_IOPS%.*} IOPS"
+log "calibration: seq ${CALIB_SEQ_MBPS%.*} MiB/s, rand ${CALIB_RAND_IOPS%.*} IOPS"
 
 # Calibration floor: on shared CI runners an unlucky VM (observed: ~190
-# vs ~400 MB/s host disk) produces junk numbers — fail fast so the job
+# vs ~400 MiB/s host disk) produces junk numbers — fail fast so the job
 # can be rerun on a fresh runner instead of polluting the results.
 # Disabled by default and always skipped on real hardware.
 CALIB_MIN_SEQ_MBPS=${CALIB_MIN_SEQ_MBPS:-0}
@@ -64,7 +64,7 @@ CALIB_MIN_RAND_IOPS=${CALIB_MIN_RAND_IOPS:-0}
 if [ -z "${BENCH_DEVICES:-}" ]; then
   if [ "${CALIB_SEQ_MBPS%.*}" -lt "$CALIB_MIN_SEQ_MBPS" ] \
      || [ "${CALIB_RAND_IOPS%.*}" -lt "$CALIB_MIN_RAND_IOPS" ]; then
-    die "runner below calibration floor (seq ${CALIB_SEQ_MBPS%.*}/${CALIB_MIN_SEQ_MBPS} MB/s, rand ${CALIB_RAND_IOPS%.*}/${CALIB_MIN_RAND_IOPS} IOPS) — rerun on a fresh runner"
+    die "runner below calibration floor (seq ${CALIB_SEQ_MBPS%.*}/${CALIB_MIN_SEQ_MBPS} MiB/s, rand ${CALIB_RAND_IOPS%.*}/${CALIB_MIN_RAND_IOPS} IOPS) — rerun on a fresh runner"
   fi
 fi
 }
@@ -593,7 +593,7 @@ if [ "$SNAPSHOTS_OK" = 1 ]; then
     DIV_SNAP_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out")
   fi
 fi
-log "divergence: plain ${DIV_PLAIN_MBPS%.*}, clone ${DIV_CLONE_MBPS%.*}, after-snapshot ${DIV_SNAP_MBPS%.*} MB/s"
+log "divergence: plain ${DIV_PLAIN_MBPS%.*}, clone ${DIV_CLONE_MBPS%.*}, after-snapshot ${DIV_SNAP_MBPS%.*} MiB/s"
 }
 
 # --- Phase 7: degraded mode + rebuild --------------------------------------
@@ -756,7 +756,7 @@ if [ -z "${BENCH_DEVICES:-}" ]; then
          conv=fsync status=none 2>/dev/null; then
       ENOSPC_RECOVER_OK=true
     fi
-    log "near-full: 95%=$NEARFULL95_MBPS MB/s, 99%=$NEARFULL99_MBPS MB/s, delete@full=$ENOSPC_DELETE_OK, write-after-delete=$ENOSPC_RECOVER_OK"
+    log "near-full: 95%=$NEARFULL95_MBPS MiB/s, 99%=$NEARFULL99_MBPS MiB/s, delete@full=$ENOSPC_DELETE_OK, write-after-delete=$ENOSPC_RECOVER_OK"
     fs_teardown || true
   else
     log "ENOSPC phase: small-array setup failed — skipping"

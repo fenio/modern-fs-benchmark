@@ -108,7 +108,7 @@ jobs:
       AGING_ITERS: ${{ matrix.aging_iters || '100' }}
       AGING_IO: 64M
       SNAPSCALE_COUNT: 500
-      # fail fast on slow shared VMs (normal runners: ~400 MB/s, ~14.5k IOPS)
+      # fail fast on slow shared VMs (normal runners: ~400 MiB/s, ~14.5k IOPS)
       CALIB_MIN_SEQ_MBPS: 300
       CALIB_MIN_RAND_IOPS: 8000
     steps:

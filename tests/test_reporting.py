@@ -41,14 +41,14 @@ BCACHEFS_REPRO_WORKFLOW = (
 )
 
 METRIC_CONTRACT = [
-    ("seqwrite_mbps", "Sequential write", "MB/s", "higher"),
+    ("seqwrite_mbps", "Sequential write", "MiB/s", "higher"),
     ("randwrite_iops", "Random write, 4k + fsync", "IOPS", "higher"),
     ("randwrite4_iops", "Random write, 4 threads", "IOPS", "higher"),
     ("fsync_p99_ms", "fsync p99 latency", "ms", "lower"),
     ("fsync_p999_ms", "fsync p99.9 latency", "ms", "lower"),
     ("randread_iops", "Random read, 4k cold cache", "IOPS", "higher"),
     ("randread4_iops", "Random read, 4 threads", "IOPS", "higher"),
-    ("seqread_mbps", "Sequential read", "MB/s", "higher"),
+    ("seqread_mbps", "Sequential read", "MiB/s", "higher"),
     ("lat_idle_p99_ms", "Trivial-op p99, idle", "ms", "lower"),
     ("lat_load_p99_ms", "Trivial-op p99 under streaming write", "ms", "lower"),
     ("lat_load_max_ms", "Trivial-op worst case under load", "ms", "lower"),
@@ -68,19 +68,19 @@ METRIC_CONTRACT = [
     ("snapshot_create_ms", "Snapshot create", "ms", "lower"),
     ("snapshot_delete_ms", "Snapshot delete (all)", "ms", "lower"),
     ("reclaim_s", "Space reclaim after delete", "s", "lower"),
-    ("reclaim_write_mbps", "Write during reclaim", "MB/s", "higher"),
+    ("reclaim_write_mbps", "Write during reclaim", "MiB/s", "higher"),
     ("compress_ratio", "zstd compression ratio", "x", "higher"),
-    ("compress_write_mbps", "Compressible-data write", "MB/s", "higher"),
+    ("compress_write_mbps", "Compressible-data write", "MiB/s", "higher"),
     ("reflink_ms", "Reflink copy of 2G", "ms", "lower"),
-    ("divergence_plain_mbps", "Overwrite plain file", "MB/s", "higher"),
-    ("divergence_clone_mbps", "Overwrite fresh reflink clone", "MB/s", "higher"),
-    ("divergence_snap_mbps", "Overwrite freshly-snapshotted file", "MB/s", "higher"),
+    ("divergence_plain_mbps", "Overwrite plain file", "MiB/s", "higher"),
+    ("divergence_clone_mbps", "Overwrite fresh reflink clone", "MiB/s", "higher"),
+    ("divergence_snap_mbps", "Overwrite freshly-snapshotted file", "MiB/s", "higher"),
     ("degraded_randwrite_iops", "Degraded random write", "IOPS", "higher"),
     ("degraded_randread_iops", "Degraded random read", "IOPS", "higher"),
     ("rebuild_s", "Rebuild after device loss", "s", "lower"),
     ("scrub_s", "Scrub after corruption", "s", "lower"),
-    ("nearfull95_write_mbps", "Write near full (95% target)", "MB/s", "higher"),
-    ("nearfull99_write_mbps", "Write near full (99% target)", "MB/s", "higher"),
+    ("nearfull95_write_mbps", "Write near full (95% target)", "MiB/s", "higher"),
+    ("nearfull99_write_mbps", "Write near full (99% target)", "MiB/s", "higher"),
     ("snapscale_create_ms", "Snapshot create at 500 snaps", "ms", "lower"),
     ("snapscale_remount_ms", "Remount with 500 snaps", "ms", "lower"),
     ("snapscale_delete_ms", "Delete 500 snapshots", "ms", "lower"),
@@ -211,6 +211,13 @@ class DashboardRegressionTests(unittest.TestCase):
         ):
             self.assertIn(legacy_section, html)
         self.assertIn("Summary indices", html)
+        self.assertIn("How to read these results", html)
+        self.assertIn("not an industry-standard benchmark suite", html)
+        self.assertIn("The suite does not use O_DIRECT", html)
+        self.assertIn("This does not certify the whole filesystem", html)
+        self.assertIn('label: "Corruption probe"', html)
+        self.assertIn('["SURVIVED", "pass"', html)
+        self.assertIn('["UNPROVEN", "lucky"', html)
         self.assertIn("content.appendChild(buildScoreSummary(view));", html)
         self.assertIn("select a score", html)
         self.assertIn("to expand its normalized contributions", html)
