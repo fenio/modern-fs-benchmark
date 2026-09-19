@@ -23,6 +23,16 @@ def main(argv=None):
         "--expected-hardware-profile",
         help="require every result to carry this hardware profile",
     )
+    parser.add_argument(
+        "--expected-benchmark-scenario",
+        help="require every result to carry this benchmark scenario",
+    )
+    parser.add_argument(
+        "--expected-configuration",
+        action="append",
+        metavar="FS/LAYOUT",
+        help="configuration required by --complete-set (repeatable)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -46,6 +56,11 @@ def main(argv=None):
         profile = (
             document.get("hardware_profile") if isinstance(document, dict) else None
         )
+        scenario = (
+            document.get("benchmark_scenario")
+            if isinstance(document, dict)
+            else None
+        )
         if isinstance(fs, str) and isinstance(layout, str):
             entities.append(f"{fs}/{layout}")
         if (
@@ -58,17 +73,30 @@ def main(argv=None):
                 file=sys.stderr,
             )
             failed = True
+        if (
+            args.expected_benchmark_scenario is not None
+            and scenario != args.expected_benchmark_scenario
+        ):
+            print(
+                f"{path}: benchmark_scenario must be "
+                f"{args.expected_benchmark_scenario!r}, got {scenario!r}",
+                file=sys.stderr,
+            )
+            failed = True
         for error in validate_document(document, schema, metrics):
             print(f"{path}: {error}", file=sys.stderr)
             failed = True
 
     if args.complete_set:
-        configurations = schema.get("configurations")
-        if not isinstance(configurations, dict):
-            print("schema.configurations must be an object", file=sys.stderr)
-            return 2
+        if args.expected_configuration:
+            expected = set(args.expected_configuration)
+        else:
+            configurations = schema.get("configurations")
+            if not isinstance(configurations, dict):
+                print("schema.configurations must be an object", file=sys.stderr)
+                return 2
+            expected = set(configurations)
         counts = collections.Counter(entities)
-        expected = set(configurations)
         missing = sorted(expected - set(counts))
         unexpected = sorted(set(counts) - expected)
         duplicates = sorted(entity for entity, count in counts.items() if count > 1)

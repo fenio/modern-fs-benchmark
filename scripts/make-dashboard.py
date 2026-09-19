@@ -4,6 +4,7 @@
 Usage: make-dashboard.py --runs <dir> --out <file> [--repo <url>]
                          [--hardware-profile <name>]
                          [--expected-hardware-profile <name>]
+                         [--expected-benchmark-scenario <name>]
                          [--history-branch <name>]
 
 <dir> holds one subdirectory per benchmark run, each containing the
@@ -144,9 +145,11 @@ DOCS = {
         "fio sequential 1M reads over the 2G file, one full pass (no looping — a time-based run re-reads cached blocks and reports RAM speed), cold cache. Phase 3.4.",
         [("run-bench.sh (Phase 3.4)", "scripts/run-bench.sh")]),
     "lat_idle_p99_ms": (
-        "A trivial operation — one 4k write + fsync every 200ms (like a shell appending "
-        "history or an editor updating its swap file) — run alone for 10s. p99 of the fsync "
-        "completion. The baseline for the under-load twin below. Phase 3.5.",
+        "A custom durability-latency probe — one 4k write + fsync every 200ms, run alone "
+        "for 10s. It is inspired by small interactive writes, not a literal model of every "
+        "shell or editor and not an industry-standard workload. About 50 operations fit in "
+        "the window, so p99 is effectively the slowest sample's histogram bucket, not a "
+        "stable population percentile. The baseline for the under-load twin below. Phase 3.5.",
         [("run-bench.sh (Phase 3.5)", "scripts/run-bench.sh")]),
     "lat_load_p99_ms": (
         "The same trivial 4k+fsync op, but measured for 30s while a second fio job floods "
@@ -330,15 +333,24 @@ DOCS = {
          ("layered_rebuild (md/lvm)", "scripts/lib/layered.sh")]),
     "scrub_s": (
         "2G of random garbage is written directly onto one member device (behind the "
-        "filesystem's back, offset 1G — python injector; uutils dd mis-seeks on dm devices), "
-        "caches dropped, then a full scrub: btrfs scrub -B, zpool scrub + wait, bcachefs "
-        "scrub, md/lvm sync-action 'check' (which can only COUNT mismatches — no checksums "
-        "to know which copy is right). Runs after the rebuild, so it validates that too. "
-        "The data-intact verdict in the table is the md5 of a 2G test file before vs after. "
+        "filesystem's back, offset 1G — python injector; uutils dd mis-seeks on dm devices). "
+        "The Linux page cache is dropped, then a full scrub runs: btrfs scrub -B, zpool scrub + wait, "
+        "bcachefs scrub, md/lvm sync-action 'check'. Plain md/lvm can only COUNT mismatches "
+        "because it has no checksums to identify the good copy; the dm-integrity variant is "
+        "the exception. Runs after the rebuild, so it validates that too. "
+        "The corruption window may include allocated data, metadata, or unused space. The "
+        "corruption-probe verdict compares only the md5 of the 2G read.dat test file before "
+        "and after; it is not a whole-filesystem health check. SURVIVED means that file was "
+        "readable and byte-identical, while FAIL means it changed or could not be read. "
+        "Nonzero found counts show detected damage, and nonzero repaired counts provide the "
+        "strongest evidence of reconstruction; zero or unavailable counts do not prove the "
+        "injected range hit the test file. After scrub, caches are dropped before hashing; "
+        "ZFS and XFS-on-zvol are export/imported, while the other backends are not remounted. "
         "Found/repaired counts are in per-filesystem units (blocks, records, sectors — "
         "zfs-8k counts ~16x more records than default zfs for the same damage) and vary "
-        "with how much allocated data the corruption window happens to overlap. On md/lvm "
-        "the verdict is probabilistic: reads round-robin between legs, so a lucky run can "
+        "with how much allocated data the corruption window happens to overlap. On plain "
+        "md/lvm without dm-integrity, the verdict is probabilistic: reads round-robin "
+        "between legs, so a lucky run can "
         "read everything from the good copy and report intact. md/lvm check durations are "
         "filesystem-independent (block-level member scans), so their ext4/xfs/LUKS variants "
         "report near-identical times — and lvm scans ~half of md's time because the bench "
@@ -375,7 +387,8 @@ with open(os.path.join(os.path.dirname(__file__), "result-schema.json")) as fh:
 
 
 def load_runs(runs_dir, expected_hardware_profile=None,
-              allow_missing_hardware_profile=False):
+              allow_missing_hardware_profile=False,
+              expected_benchmark_scenario=None):
     runs = []
     subdirs = sorted(
         d for d in glob.glob(os.path.join(runs_dir, "*")) if os.path.isdir(d)
@@ -400,6 +413,14 @@ def load_runs(runs_dir, expected_hardware_profile=None,
                     f"{f}: hardware_profile must be "
                     f"{expected_hardware_profile!r}, got "
                     f"{actual_profile!r}"
+                )
+            actual_scenario = doc.get("benchmark_scenario")
+            if (expected_benchmark_scenario is not None
+                    and actual_scenario != expected_benchmark_scenario):
+                raise ValueError(
+                    f"{f}: benchmark_scenario must be "
+                    f"{expected_benchmark_scenario!r}, got "
+                    f"{actual_scenario!r}"
                 )
             entity = f"{doc['fs']}/{doc['layout']}"
             entry = dict(doc.get("results", {}))
@@ -479,6 +500,15 @@ def main():
                     help="reject results from any other hardware profile")
     ap.add_argument("--allow-missing-hardware-profile", action="store_true",
                     help="accept legacy results with no profile, but reject conflicts")
+    ap.add_argument("--expected-benchmark-scenario",
+                    help="reject results from any other benchmark scenario")
+    ap.add_argument(
+        "--setup-detail",
+        action="append",
+        default=[],
+        metavar="LABEL=VALUE",
+        help="add a labeled testbed or topology detail at the top of the dashboard",
+    )
     ap.add_argument("--history-branch", default="results-data")
     ap.add_argument("--window", type=int, default=100,
                     help="newest runs kept raw; older collapsed to daily medians")
@@ -486,12 +516,19 @@ def main():
     if (args.hardware_profile and args.expected_hardware_profile
             and args.hardware_profile != args.expected_hardware_profile):
         ap.error("displayed and expected hardware profiles must match")
+    setup_details = []
+    for detail in args.setup_detail:
+        label, separator, value = detail.partition("=")
+        if not separator or not label.strip() or not value.strip():
+            ap.error("--setup-detail must be a nonempty LABEL=VALUE pair")
+        setup_details.append({"label": label.strip(), "value": value.strip()})
 
     try:
         raw_runs = load_runs(
             args.runs,
             args.expected_hardware_profile,
             args.allow_missing_hardware_profile,
+            args.expected_benchmark_scenario,
         )
     except ValueError as exc:
         print(exc, file=sys.stderr)
@@ -540,6 +577,8 @@ def main():
         "runCount": run_count,
         "repo": args.repo,
         "hardwareProfile": args.hardware_profile or args.expected_hardware_profile,
+        "benchmarkScenario": args.expected_benchmark_scenario,
+        "setupDetails": setup_details,
         "historyBranch": args.history_branch,
         "docs": {k: {"text": t, "src": [{"label": l, "url": SRC + p} for l, p in s]}
                  for k, (t, s) in DOCS.items()
@@ -588,6 +627,19 @@ h2 { font-size: 15px; font-weight: 650; margin: 40px 0 4px; }
 .sub { color: var(--ink-2); margin-top: 4px; }
 .sub a { color: inherit; }
 .note { color: var(--muted); font-size: 12.5px; margin: 2px 0 14px; }
+.setup { margin-top: 18px; padding: 14px 16px; }
+.setup h2 { margin: 0 0 10px; }
+.setup dl { display: grid; grid-template-columns: minmax(110px, 0.18fr) 1fr; gap: 7px 18px; }
+.setup dt { color: var(--muted); font-size: 12.5px; font-weight: 650; }
+.setup dd { color: var(--ink-2); font-size: 12.5px; }
+.reading { margin-top: 10px; padding: 14px 16px; }
+.reading h2 { margin: 0 0 7px; }
+.reading p { color: var(--ink-2); font-size: 12.5px; margin-top: 6px; }
+.reading strong { color: var(--ink); }
+@media (max-width: 720px) {
+  .setup dl { grid-template-columns: 1fr; gap: 2px; }
+  .setup dd + dt { margin-top: 7px; }
+}
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 18px 0 6px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 13px; }
 .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
@@ -779,7 +831,7 @@ const logMap = (v, lo, hi) =>
 
 // Summary score model v1. Normalize each metric to the active cohort median,
 // then geometric-mean metrics into equal-weight subgroups and groups. Boolean
-// integrity outcomes stay categorical and never enter a score.
+// Corruption-probe outcomes stay categorical and never enter a score.
 const SCORE_MODEL = {
   version: 1,
   runWindow: 8,
@@ -882,11 +934,11 @@ function indexButton(ratio, coverage, total, title, onClick) {
 }
 
 const scoreIntegrity = row => row.integrity === false
-  ? ["FAIL", "fail", "Data changed after corruption", 1]
+  ? ["FAIL", "fail", "Tracked test file changed or was unreadable after corruption and scrub", 1]
   : row.integrity === true && integrityCapable(row.entity)
-    ? ["PASS", "pass", "Checksummed or integrity-protected data remained intact", 3]
+    ? ["SURVIVED", "pass", "Tracked test file remained readable and hash-identical; not a whole-filesystem certification", 3]
     : row.integrity === true
-      ? ["LUCKY", "lucky", "Intact read without data checksums; read-balancing luck", 2]
+      ? ["UNPROVEN", "lucky", "Hash matched without end-to-end data checksums; this does not demonstrate repair", 2]
       : ["N/A", "", "Corruption test not applicable", 0];
 
 function buildScoreSummary(view) {
@@ -897,7 +949,7 @@ function buildScoreSummary(view) {
     `Score model v${SCORE_MODEL.version}: 100 = the selected cohort median. Metrics are ` +
     `normalized by direction, then geometric-meaned with equal subgroup and group weight. ` +
     `Using ${summary.runs.length} recent complete selected-cohort run${summary.runs.length === 1 ? "" : "s"}; ` +
-    `integrity is never averaged. Click a column header to sort; select a score ` +
+    `the corruption probe is never averaged. Click a column header to sort; select a score ` +
     `to expand its normalized contributions.`));
   if (!summary.runs.length) {
     section.appendChild(el("div", {class: "card index-card"},
@@ -913,7 +965,7 @@ function buildScoreSummary(view) {
     ...SCORE_MODEL.groups.map((group, index) => ({
       label: group.label, get: row => row.groups[index].ratio,
     })),
-    {label: "Integrity", get: row => scoreIntegrity(row)[3]},
+    {label: "Corruption probe", get: row => scoreIntegrity(row)[3]},
   ];
   let openDetail = null, openButton = null;
   const closeDetail = () => {
@@ -1419,7 +1471,7 @@ const cols = [
   ...DATA.metrics.map(m => ({label: m.label, unit: m.unit, get: (e, r, c) => r[m.key]})),
   {label: "scrub errors found", get: (e, r, c) => r.scrub_found},
   {label: "scrub repaired", get: (e, r, c) => r.scrub_repaired},
-  {label: "data intact after corruption", str: true,
+  {label: "test file intact after corruption", str: true,
    get: (e, r, c) => r.data_intact == null ? null : (r.data_intact ? "yes" : "NO")},
   {label: "FIEMAP shows shared extents", str: true,
    get: (e, r, c) => r.reflink_fiemap_shared == null ? null : (r.reflink_fiemap_shared ? "yes" : "NO")},
@@ -1427,7 +1479,7 @@ const cols = [
    get: (e, r, c) => r.enospc_delete_ok == null ? null : (r.enospc_delete_ok ? "yes" : "NO")},
   {label: "writable after delete", str: true,
    get: (e, r, c) => r.enospc_recover_ok == null ? null : (r.enospc_recover_ok ? "yes" : "NO")},
-  {label: "calib seq", unit: "MB/s", get: (e, r, c) => c.seqwrite_mbps},
+  {label: "calib seq", unit: "MiB/s", get: (e, r, c) => c.seqwrite_mbps},
   {label: "calib rand", unit: "IOPS", get: (e, r, c) => c.randwrite_iops},
   {label: "tools / module version", str: true, get: (e, r, c) => r.version},
 ];
@@ -1478,14 +1530,41 @@ const dt = (latest.date || "").replace("T", " ").replace("Z", " UTC");
 const runSummary = `${DATA.runCount} run${DATA.runCount === 1 ? "" : "s"} recorded` +
   (DATA.runCount === DATA.runs.length ? "" : ` · ${DATA.runs.length} trend points shown`);
 app.appendChild(el("h1", {}, "modern-fs-benchmark" +
-  (DATA.hardwareProfile ? ` · ${DATA.hardwareProfile}` : "")));
+  (DATA.hardwareProfile ? ` · ${DATA.hardwareProfile}` : "") +
+  (DATA.benchmarkScenario ? ` · ${DATA.benchmarkScenario}` : "")));
 app.appendChild(el("p", {class: "sub"},
   `Multi-device CoW filesystems under workloads classic benchmarks skip —
    latest run ${dt}, kernel ${latest.kernel}, ${runSummary}
    · <a href="${DATA.repo}">repository</a>`));
-app.appendChild(el("p", {class: "note"}, DATA.hardwareProfile
+app.appendChild(el("p", {class: "note"},
+  (DATA.benchmarkScenario ? `Benchmark scenario: ${DATA.benchmarkScenario}. ` : "") +
+  (DATA.hardwareProfile
   ? `Dedicated real-hardware profile: ${DATA.hardwareProfile}. Results from other hardware profiles are published separately.`
-  : "CI runs use loop devices on shared ephemeral VMs (one VM per filesystem): compare shapes and ratios, not absolute MB/s. Each job records a host-calibration anchor — see the table."));
+  : "CI runs use loop devices on shared ephemeral VMs (one VM per filesystem): compare shapes and ratios, not absolute MiB/s. Each job records a host-calibration anchor — see the table.")));
+if (DATA.setupDetails.length) {
+  const setup = el("section", {class: "card setup"});
+  setup.appendChild(el("h2", {}, "Test setup"));
+  const details = el("dl");
+  DATA.setupDetails.forEach(detail => {
+    const term = el("dt");
+    const description = el("dd");
+    term.textContent = detail.label;
+    description.textContent = detail.value;
+    details.appendChild(term);
+    details.appendChild(description);
+  });
+  setup.appendChild(details);
+  app.appendChild(setup);
+}
+const reading = el("section", {class: "card reading"});
+reading.appendChild(el("h2", {}, "How to read these results"));
+reading.appendChild(el("p", {},
+  "<strong>Workload scope.</strong> fio is an established tool and MiB/s, IOPS, and latency percentiles are conventional measurements, but these exact workload recipes and the Overall Core index are project-specific, not an industry-standard benchmark suite."));
+reading.appendChild(el("p", {},
+  "<strong>Cache policy.</strong> The suite does not use O_DIRECT. Read phases documented as cold-cache drop the Linux page cache (and export/import ZFS pools), then perform normal reads that repopulate caches. Other phases use normal buffered I/O, with fsync, fdatasync, or sync where documented; warm directory-stat results are reported separately."));
+reading.appendChild(el("p", {},
+  "<strong>Corruption probe.</strong> After a 2 GiB raw range on one member is overwritten, SURVIVED means only that the tracked read.dat file remained readable and hash-identical after scrub; FAIL means it changed or was unreadable. UNPROVEN is a matching read from a stack without end-to-end data checksums. This does not certify the whole filesystem or prove every overwritten byte belonged to allocated data. See <a href=\"#doc-scrub_s\">the full method and caveats</a>."));
+app.appendChild(reading);
 
 const chipBtns = new Map();
 const famBtns = new Map();
@@ -1592,7 +1671,7 @@ function rebuild() {
 
   content.appendChild(el("h2", {}, `Snapshot aging <a class="dochint" href="#doc-aging_mbps" title="What exactly does this test run?">?</a>`));
   content.appendChild(el("p", {class: "note"},
-    "Random-overwrite bandwidth (MB/s) per iteration while snapshots accumulate — flat is good, falling is CoW fragmentation cost. Snapshot counts differ by design: 100 where the technology allows, 10 for default-recordsize ZFS, 8 for LVM."));
+    "Random-overwrite bandwidth (MiB/s) per iteration while snapshots accumulate — flat is good, falling is CoW fragmentation cost. Snapshot counts differ by design: 100 where the technology allows, 10 for default-recordsize ZFS, 8 for LVM."));
   const agingCard = el("div", {class: "card"});
   const iters = Math.max(...view.map(e => ((latest.results[e.id] || {}).aging_mbps || []).length), 0);
   if (iters > 0) {
@@ -1600,7 +1679,7 @@ function rebuild() {
     agingCard.appendChild(zoomable(
       view.map(e => ({name: e.id, color: color(e), dash: dash(e), keyHtml: key(e),
         points: ((latest.results[e.id] || {}).aging_mbps || []).map((v, j) => ({x: j, y: v}))})),
-      xl, "MB/s"));
+      xl, "MiB/s"));
   }
   content.appendChild(agingCard);
 
@@ -1657,7 +1736,7 @@ loadExplorerLibrary();
   const box = el("div", {class: "card"});
   const labelOf = {};
   DATA.metrics.forEach(m => labelOf[m.key] = `${m.label} (${m.unit})`);
-  labelOf["aging_mbps"] = "Snapshot aging curve (MB/s)";
+  labelOf["aging_mbps"] = "Snapshot aging curve (MiB/s)";
   Object.keys(DATA.docs).forEach(k => {
     const d = DATA.docs[k];
     const entry = el("div", {class: "docentry", id: `doc-${k}`});

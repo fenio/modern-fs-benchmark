@@ -2,7 +2,7 @@ name: publish-pages
 
 on:
   workflow_run:
-    workflows: [fs-bench, fs-bench-real-hw, fs-bench-real-hw-sas-hdd]
+    workflows: [fs-bench, fs-bench-real-hw, fs-bench-real-hw-sas-hdd, fs-bench-real-hw-sas-hdd-hybrid-tier]
     types: [completed]
   workflow_dispatch:
 
@@ -54,7 +54,6 @@ jobs:
 
       - name: Check out sas-hdd result history
         id: sas-hdd-history
-        continue-on-error: true
         run: |
           set +e
           git ls-remote --exit-code --heads origin results-real-hw-sas-hdd >/dev/null 2>&1
@@ -74,7 +73,13 @@ jobs:
       - name: Build dashboards
         run: |
           python3 scripts/make-dashboard.py --runs standard-data/runs --out site/index.html \
-            --repo "https://github.com/${{ github.repository }}"
+            --repo "https://github.com/${{ github.repository }}" \
+            --setup-detail 'Environment=GitHub-hosted Ubuntu VM; each filesystem configuration runs in a fresh VM' \
+            --setup-detail 'Devices=Four 16 GiB loop devices plus one 16 GiB rebuild spare; the ZFS-single job uses one 32 GiB loop device' \
+            --setup-detail 'Storage caveat=Loop-device files share the VM ephemeral backing storage; they are not independent physical disks' \
+            --setup-detail 'Mirrored layouts=Linux md/LVM RAID10, two striped ZFS mirror pairs, Btrfs RAID1, or bcachefs replicas=2 across four loop devices' \
+            --setup-detail 'Parity layouts=Linux md RAID6, ZFS RAIDZ1/RAIDZ2, Btrfs RAID6 with RAID1C3 metadata, or bcachefs erasure coding across four loop devices' \
+            --setup-detail 'Single-device layouts=Use one loop device'
           if compgen -G "hardware-data/runs/*/result-*.json" >/dev/null; then
             python3 scripts/make-dashboard.py --runs hardware-data/runs --out site/real-hw/index.html \
               --repo "https://github.com/${{ github.repository }}" \
@@ -84,14 +89,56 @@ jobs:
 
       - name: Build sas-hdd dashboard
         if: steps.sas-hdd-history.outputs.present == 'true'
-        continue-on-error: true
         run: |
           if compgen -G "sas-hdd-data/runs/*/result-*.json" >/dev/null; then
             python3 scripts/make-dashboard.py --runs sas-hdd-data/runs \
               --out site/sas-hdd/index.html \
               --repo "https://github.com/${{ github.repository }}" \
               --hardware-profile sas-hdd --expected-hardware-profile sas-hdd \
-              --history-branch results-real-hw-sas-hdd
+              --history-branch results-real-hw-sas-hdd \
+              --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
+              --setup-detail 'Physical media=Six independent 6 TB 7200 RPM SAS HDDs: four 16 GiB member partitions, one 16 GiB rebuild spare, and one dedicated 32 GiB ZFS-single partition' \
+              --setup-detail 'Mirrored layouts=Linux md/LVM RAID10, two striped ZFS mirror pairs, Btrfs RAID1, or bcachefs replicas=2 across four member disks' \
+              --setup-detail 'Parity layouts=Linux md RAID6, ZFS RAIDZ1/RAIDZ2, Btrfs RAID6 with RAID1C3 metadata, or bcachefs erasure coding across four member disks' \
+              --setup-detail 'Single-device layouts=Use one member disk; ZFS single uses the separate 32 GiB disk'
+          fi
+
+      - name: Check out hybrid-tier result history
+        id: hybrid-tier-history
+        run: |
+          branch=results-real-hw-sas-hdd-hybrid-tier-v1
+          set +e
+          git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch origin "$branch"
+            git worktree add hybrid-tier-data "origin/$branch"
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 2 ]; then
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "failed to query $branch (git exit $status)" >&2
+            exit "$status"
+          fi
+
+      - name: Build hybrid-tier dashboard
+        if: steps.hybrid-tier-history.outputs.present == 'true'
+        run: |
+          if compgen -G "hybrid-tier-data/runs/*/result-*.json" >/dev/null; then
+            python3 scripts/make-dashboard.py --runs hybrid-tier-data/runs \
+              --out site/sas-hdd/hybrid-tier/index.html \
+              --repo "https://github.com/${{ github.repository }}" \
+              --hardware-profile sas-hdd --expected-hardware-profile sas-hdd \
+              --expected-benchmark-scenario hybrid-tier-v1 \
+              --history-branch results-real-hw-sas-hdd-hybrid-tier-v1 \
+              --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
+              --setup-detail 'Physical media=Eleven drives: eight SAS HDDs and three SAS SSDs' \
+              --setup-detail 'Allocation=Eight 128 GiB HDD data partitions; two SSDs each provide 64 GiB durable data plus 4 GiB cache metadata; the third SSD provides a 64 GiB disposable read cache' \
+              --setup-detail 'Role use=Btrfs uses the 4 GiB cache-metadata partitions but not the third SSD; ZFS and bcachefs use the third SSD but not those metadata partitions' \
+              --setup-detail 'Btrfs=Single-profile Btrfs on eight-HDD md RAID10 with mirrored SSD LVM dm-cache in writeback mode' \
+              --setup-detail 'ZFS=Four HDD mirror vdevs, a mirrored SSD metadata-only special vdev, and SSD L2ARC' \
+              --setup-detail 'bcachefs=Replicated HDD background target, mirrored SSD foreground and metadata targets, and a non-durable SSD promote target'
           fi
 
       - uses: actions/configure-pages@v6

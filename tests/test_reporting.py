@@ -18,6 +18,7 @@ AUDIT = ROOT / "scripts" / "audit-results.py"
 SCHEMA = ROOT / "scripts" / "result-schema.json"
 VALIDATOR = ROOT / "scripts" / "validate-result.py"
 RUN_BENCH = ROOT / "scripts" / "run-bench.sh"
+SUMMARIZE = ROOT / "scripts" / "summarize.sh"
 MANAGED_HARDWARE_RUNNER = ROOT / "scripts" / "managed-hardware-runner.sh"
 XFS_BACKEND = ROOT / "scripts" / "fs" / "xfs.sh"
 ZFS_BACKEND = ROOT / "scripts" / "fs" / "zfs.sh"
@@ -31,20 +32,23 @@ HARDWARE_BENCH_WORKFLOW = (
 SAS_HDD_BENCH_WORKFLOW = (
     ROOT / ".github" / "workflows" / "bench-real-hw-sas-hdd.yml"
 )
+HYBRID_TIER_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "bench-real-hw-sas-hdd-hybrid-tier.yml"
+)
 PAGES_WORKFLOW = ROOT / ".github" / "workflows" / "publish-pages.yml"
 BCACHEFS_REPRO_WORKFLOW = (
     ROOT / ".github" / "workflows" / "repro-bcachefs-ec.yml"
 )
 
 METRIC_CONTRACT = [
-    ("seqwrite_mbps", "Sequential write", "MB/s", "higher"),
+    ("seqwrite_mbps", "Sequential write", "MiB/s", "higher"),
     ("randwrite_iops", "Random write, 4k + fsync", "IOPS", "higher"),
     ("randwrite4_iops", "Random write, 4 threads", "IOPS", "higher"),
     ("fsync_p99_ms", "fsync p99 latency", "ms", "lower"),
     ("fsync_p999_ms", "fsync p99.9 latency", "ms", "lower"),
     ("randread_iops", "Random read, 4k cold cache", "IOPS", "higher"),
     ("randread4_iops", "Random read, 4 threads", "IOPS", "higher"),
-    ("seqread_mbps", "Sequential read", "MB/s", "higher"),
+    ("seqread_mbps", "Sequential read", "MiB/s", "higher"),
     ("lat_idle_p99_ms", "Trivial-op p99, idle", "ms", "lower"),
     ("lat_load_p99_ms", "Trivial-op p99 under streaming write", "ms", "lower"),
     ("lat_load_max_ms", "Trivial-op worst case under load", "ms", "lower"),
@@ -64,19 +68,19 @@ METRIC_CONTRACT = [
     ("snapshot_create_ms", "Snapshot create", "ms", "lower"),
     ("snapshot_delete_ms", "Snapshot delete (all)", "ms", "lower"),
     ("reclaim_s", "Space reclaim after delete", "s", "lower"),
-    ("reclaim_write_mbps", "Write during reclaim", "MB/s", "higher"),
+    ("reclaim_write_mbps", "Write during reclaim", "MiB/s", "higher"),
     ("compress_ratio", "zstd compression ratio", "x", "higher"),
-    ("compress_write_mbps", "Compressible-data write", "MB/s", "higher"),
+    ("compress_write_mbps", "Compressible-data write", "MiB/s", "higher"),
     ("reflink_ms", "Reflink copy of 2G", "ms", "lower"),
-    ("divergence_plain_mbps", "Overwrite plain file", "MB/s", "higher"),
-    ("divergence_clone_mbps", "Overwrite fresh reflink clone", "MB/s", "higher"),
-    ("divergence_snap_mbps", "Overwrite freshly-snapshotted file", "MB/s", "higher"),
+    ("divergence_plain_mbps", "Overwrite plain file", "MiB/s", "higher"),
+    ("divergence_clone_mbps", "Overwrite fresh reflink clone", "MiB/s", "higher"),
+    ("divergence_snap_mbps", "Overwrite freshly-snapshotted file", "MiB/s", "higher"),
     ("degraded_randwrite_iops", "Degraded random write", "IOPS", "higher"),
     ("degraded_randread_iops", "Degraded random read", "IOPS", "higher"),
     ("rebuild_s", "Rebuild after device loss", "s", "lower"),
     ("scrub_s", "Scrub after corruption", "s", "lower"),
-    ("nearfull95_write_mbps", "Write near full (95% target)", "MB/s", "higher"),
-    ("nearfull99_write_mbps", "Write near full (99% target)", "MB/s", "higher"),
+    ("nearfull95_write_mbps", "Write near full (95% target)", "MiB/s", "higher"),
+    ("nearfull99_write_mbps", "Write near full (99% target)", "MiB/s", "higher"),
     ("snapscale_create_ms", "Snapshot create at 500 snaps", "ms", "lower"),
     ("snapscale_remount_ms", "Remount with 500 snaps", "ms", "lower"),
     ("snapscale_delete_ms", "Delete 500 snapshots", "ms", "lower"),
@@ -195,6 +199,8 @@ class DashboardRegressionTests(unittest.TestCase):
         )
         self.assertEqual(data["repo"], "https://example.test/fsbench")
         self.assertIsNone(data["hardwareProfile"])
+        self.assertIsNone(data["benchmarkScenario"])
+        self.assertEqual(data["setupDetails"], [])
         self.assertEqual(data["historyBranch"], "results-data")
         self.assertIn('href="https://github.com/nasty-project/nasty"', html)
         for legacy_section in (
@@ -205,6 +211,13 @@ class DashboardRegressionTests(unittest.TestCase):
         ):
             self.assertIn(legacy_section, html)
         self.assertIn("Summary indices", html)
+        self.assertIn("How to read these results", html)
+        self.assertIn("not an industry-standard benchmark suite", html)
+        self.assertIn("The suite does not use O_DIRECT", html)
+        self.assertIn("This does not certify the whole filesystem", html)
+        self.assertIn('label: "Corruption probe"', html)
+        self.assertIn('["SURVIVED", "pass"', html)
+        self.assertIn('["UNPROVEN", "lucky"', html)
         self.assertIn("content.appendChild(buildScoreSummary(view));", html)
         self.assertIn("select a score", html)
         self.assertIn("to expand its normalized contributions", html)
@@ -335,6 +348,85 @@ class DashboardRegressionTests(unittest.TestCase):
         self.assertIn(
             "hardware_profile must be 'farm3', got 'sas-hdd'", conflicting.stderr
         )
+
+    def test_dashboard_validates_and_displays_benchmark_scenario(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            output = Path(tmp) / "index.html"
+            shutil.copytree(FIXTURE_RUNS, runs)
+            for result_file in runs.glob("*/*.json"):
+                document = json.loads(result_file.read_text())
+                document["benchmark_scenario"] = "hybrid-isolated"
+                result_file.write_text(json.dumps(document))
+
+            accepted = run_script(
+                DASHBOARD,
+                "--runs",
+                runs,
+                "--out",
+                output,
+                "--expected-benchmark-scenario",
+                "hybrid-isolated",
+            )
+            html = output.read_text()
+            data = dashboard_data(html)
+            conflicting_file = runs / "100" / "result-ext4-single.json"
+            document = json.loads(conflicting_file.read_text())
+            document["benchmark_scenario"] = "other"
+            conflicting_file.write_text(json.dumps(document))
+            rejected = run_script(
+                DASHBOARD,
+                "--runs",
+                runs,
+                "--out",
+                output,
+                "--expected-benchmark-scenario",
+                "hybrid-isolated",
+            )
+
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(data["benchmarkScenario"], "hybrid-isolated")
+        self.assertIn(
+            '(DATA.benchmarkScenario ? ` · ${DATA.benchmarkScenario}` : "")',
+            html,
+        )
+        self.assertIn("Benchmark scenario: ${DATA.benchmarkScenario}.", html)
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn(
+            "benchmark_scenario must be 'hybrid-isolated', got 'other'",
+            rejected.stderr,
+        )
+
+    def test_dashboard_displays_explicit_test_setup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "index.html"
+            result = run_script(
+                DASHBOARD,
+                "--runs",
+                FIXTURE_RUNS,
+                "--out",
+                output,
+                "--setup-detail",
+                "Physical media=Six SAS HDDs",
+                "--setup-detail",
+                "Topology=Four members plus one rebuild spare",
+            )
+            html = output.read_text()
+            data = dashboard_data(html)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            data["setupDetails"],
+            [
+                {"label": "Physical media", "value": "Six SAS HDDs"},
+                {
+                    "label": "Topology",
+                    "value": "Four members plus one rebuild spare",
+                },
+            ],
+        )
+        self.assertIn('setup.appendChild(el("h2", {}, "Test setup"));', html)
+        self.assertIn("description.textContent = detail.value", html)
 
 
 class AuditRegressionTests(unittest.TestCase):
@@ -529,6 +621,63 @@ class AuditRegressionTests(unittest.TestCase):
             result.stdout,
         )
 
+    def test_expected_scenario_and_configuration_set_are_enforced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            shutil.copytree(FIXTURE_RUNS, runs)
+            for result_file in runs.glob("*/*.json"):
+                document = json.loads(result_file.read_text())
+                document["benchmark_scenario"] = "hybrid-isolated"
+                result_file.write_text(json.dumps(document))
+            entities = [
+                "btrfs/raid1",
+                "bcachefs/replicas2",
+                "xfs/zvol",
+            ]
+            configuration_args = [
+                item
+                for entity in entities
+                for item in ("--expected-configuration", entity)
+            ]
+
+            accepted = run_script(
+                AUDIT,
+                "--expected-benchmark-scenario",
+                "hybrid-isolated",
+                *configuration_args,
+                runs,
+            )
+            missing = run_script(
+                AUDIT,
+                "--expected-benchmark-scenario",
+                "hybrid-isolated",
+                *configuration_args,
+                "--expected-configuration",
+                "ext4/single",
+                runs,
+            )
+            conflicting_file = runs / "100" / "result-ext4-single.json"
+            document = json.loads(conflicting_file.read_text())
+            document["benchmark_scenario"] = "other"
+            conflicting_file.write_text(json.dumps(document))
+            rejected = run_script(
+                AUDIT,
+                "--allow-partial",
+                "--expected-benchmark-scenario",
+                "hybrid-isolated",
+                runs,
+            )
+
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        self.assertIn("no anomalies found", accepted.stdout)
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("latest run missing configurations: ext4/single", missing.stdout)
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn(
+            "benchmark_scenario must be 'hybrid-isolated', got 'other'",
+            rejected.stderr,
+        )
+
 
 class ResultSchemaTests(unittest.TestCase):
     def write_complete_result_set(self, directory):
@@ -577,6 +726,20 @@ class ResultSchemaTests(unittest.TestCase):
         ]
         for key, _label, _unit, _better in HARDWARE_METRIC_CONTRACT:
             self.assertNotIn(key, score_model)
+
+    def test_scenario_and_topology_are_optional_nonempty_strings(self):
+        schema = json.loads(SCHEMA.read_text())
+
+        for key in ("benchmark_scenario", "topology"):
+            self.assertEqual(
+                schema["document"][key],
+                {"type": "string", "nonempty": True, "required": False},
+            )
+        result = run_script(
+            VALIDATOR,
+            FIXTURE_RUNS / "101" / "result-btrfs-raid1.json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_configurations_match_benchmark_matrix(self):
         schema = json.loads(SCHEMA.read_text())
@@ -697,6 +860,100 @@ class ResultSchemaTests(unittest.TestCase):
             "hardware_profile must be 'farm3', got 'sas-hdd'", rejected.stderr
         )
 
+    def test_expected_benchmark_scenario_is_enforced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result_file = Path(tmp) / "result.json"
+            document = json.loads(
+                (FIXTURE_RUNS / "101" / "result-btrfs-raid1.json").read_text()
+            )
+            document["benchmark_scenario"] = "hybrid-isolated"
+            result_file.write_text(json.dumps(document))
+
+            accepted = run_script(
+                VALIDATOR,
+                "--expected-benchmark-scenario",
+                "hybrid-isolated",
+                result_file,
+            )
+            rejected = run_script(
+                VALIDATOR,
+                "--expected-benchmark-scenario",
+                "other",
+                result_file,
+            )
+
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn(
+            "benchmark_scenario must be 'other', got 'hybrid-isolated'",
+            rejected.stderr,
+        )
+
+    def test_explicit_three_configuration_complete_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for fixture in sorted((FIXTURE_RUNS / "101").glob("*.json")):
+                path = Path(tmp) / fixture.name
+                shutil.copy2(fixture, path)
+                paths.append(path)
+            documents = [json.loads(path.read_text()) for path in paths]
+            entities = [f"{doc['fs']}/{doc['layout']}" for doc in documents]
+            configuration_args = [
+                item
+                for entity in entities
+                for item in ("--expected-configuration", entity)
+            ]
+
+            accepted = run_script(
+                VALIDATOR,
+                "--complete-set",
+                *configuration_args,
+                *paths,
+            )
+            missing = run_script(
+                VALIDATOR,
+                "--complete-set",
+                *configuration_args,
+                *paths[:-1],
+            )
+            unexpected_path = Path(tmp) / "unexpected.json"
+            unexpected_document = documents[0].copy()
+            unexpected_document["fs"] = "ext4"
+            unexpected_document["layout"] = "single"
+            unexpected_path.write_text(json.dumps(unexpected_document))
+            unexpected = run_script(
+                VALIDATOR,
+                "--complete-set",
+                *configuration_args,
+                *paths,
+                unexpected_path,
+            )
+            duplicate_path = Path(tmp) / "duplicate.json"
+            shutil.copy2(paths[0], duplicate_path)
+            duplicate = run_script(
+                VALIDATOR,
+                "--complete-set",
+                *configuration_args,
+                *paths,
+                duplicate_path,
+            )
+
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn(
+            f"result set missing configurations: {entities[-1]}", missing.stderr
+        )
+        self.assertEqual(unexpected.returncode, 1)
+        self.assertIn(
+            "result set has unknown configurations: ext4/single",
+            unexpected.stderr,
+        )
+        self.assertEqual(duplicate.returncode, 1)
+        self.assertIn(
+            f"result set has duplicate configurations: {entities[0]}",
+            duplicate.stderr,
+        )
+
     def test_history_publication_requires_complete_result_set(self):
         workflow = BENCH_WORKFLOW.read_text()
 
@@ -745,10 +1002,18 @@ class ResultSchemaTests(unittest.TestCase):
         self.assertIn(
             "if: steps.sas-hdd-history.outputs.present == 'true'", pages
         )
-        self.assertGreaterEqual(pages.count("continue-on-error: true"), 2)
+        self.assertNotIn("continue-on-error: true", pages)
         self.assertIn("--expected-hardware-profile farm3", pages)
         self.assertIn("--allow-missing-hardware-profile", pages)
         self.assertIn("--expected-hardware-profile sas-hdd", pages)
+        self.assertIn("Devices=Four 16 GiB loop devices", pages)
+        self.assertIn("they are not independent physical disks", pages)
+        self.assertIn("Physical media=Six independent 6 TB", pages)
+        self.assertIn("Physical media=Eleven drives", pages)
+        self.assertIn("Role use=Btrfs uses the 4 GiB", pages)
+        self.assertIn("Btrfs=Single-profile Btrfs on eight-HDD md RAID10", pages)
+        self.assertIn("ZFS=Four HDD mirror vdevs", pages)
+        self.assertIn("bcachefs=Replicated HDD background target", pages)
         self.assertLess(
             pages.index("actions/upload-pages-artifact"),
             pages.index("actions/deploy-pages"),
@@ -879,6 +1144,55 @@ class ResultSchemaTests(unittest.TestCase):
 
         self.assertIsNotNone(match)
         self.assertEqual(int(match.group(1)), schema_version)
+
+    def test_benchmark_supports_optional_result_provenance_overrides(self):
+        source = RUN_BENCH.read_text()
+        write_result = source[source.index("write_result() {") :]
+
+        self.assertIn("${BENCH_RESULT_DEVICES:-${BENCH_DEVICES:-loop}}", write_result)
+        self.assertIn("${BENCH_RESULT_NDEV:-${#DEVICES[@]}}", write_result)
+        self.assertIn(
+            "${BENCH_RESULT_DEVICE_SIZE_BYTES:-$(blockdev --getsize64",
+            write_result,
+        )
+        self.assertIn('${BENCH_SCENARIO:-}', write_result)
+        self.assertIn('${BENCH_TOPOLOGY:-}', write_result)
+        for variable in (
+            "BENCH_RESULT_DEVICES",
+            "BENCH_RESULT_NDEV",
+            "BENCH_RESULT_DEVICE_SIZE_BYTES",
+        ):
+            self.assertNotIn(variable, source[: source.index("write_result() {")])
+
+    def test_summary_heading_only_includes_scenario_when_present(self):
+        fixture = FIXTURE_RUNS / "101" / "result-btrfs-raid1.json"
+        default = subprocess.run(
+            ["bash", str(SUMMARIZE), str(fixture)],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            result_file = Path(tmp) / "result.json"
+            document = json.loads(fixture.read_text())
+            document["benchmark_scenario"] = "hybrid-isolated"
+            result_file.write_text(json.dumps(document))
+            scenario = subprocess.run(
+                ["bash", str(SUMMARIZE), str(result_file)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(default.returncode, 0, default.stderr)
+        self.assertEqual(default.stdout.splitlines()[0], "### Filesystem benchmark results")
+        self.assertEqual(scenario.returncode, 0, scenario.stderr)
+        self.assertEqual(
+            scenario.stdout.splitlines()[0],
+            "### Filesystem benchmark results — hybrid-isolated",
+        )
 
 
 class BenchmarkPhaseTests(unittest.TestCase):
@@ -1208,6 +1522,187 @@ class BackendConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(refused.returncode, 2)
         self.assertIn("refusing", refused.stderr)
+
+    def test_hybrid_tier_workflow_is_scenario_isolated(self):
+        workflow = HYBRID_TIER_WORKFLOW.read_text()
+        baseline = SAS_HDD_BENCH_WORKFLOW.read_text()
+        pages = PAGES_WORKFLOW.read_text()
+
+        self.assertIn("group: fs-bench-sas-hdd-storage", workflow)
+        self.assertIn("group: fs-bench-sas-hdd-storage", baseline)
+        self.assertIn("benchmark-scenario:hybrid-tier-v1", workflow)
+        self.assertIn("results-real-hw-sas-hdd-hybrid-tier-v1", workflow)
+        self.assertIn("needs.bench.result == 'success'", workflow)
+        self.assertIn("hybrid-cleanup-btrfs-complete", workflow)
+        self.assertIn("hybrid-cleanup-zfs-complete", workflow)
+        self.assertIn("hybrid-cleanup-bcachefs-complete", workflow)
+        self.assertIn('.fs == "btrfs" and .ndev == 12', workflow)
+        self.assertIn('.fs == "zfs" and .ndev == 11', workflow)
+        self.assertIn('.fs == "bcachefs" and .ndev == 11', workflow)
+        self.assertIn("expected_btrfs_devices", workflow)
+        self.assertIn("expected_tier_devices", workflow)
+        self.assertIn(".devices == $expected_btrfs_devices", workflow)
+        self.assertIn(".devices == $expected_tier_devices", workflow)
+        self.assertIn("site/sas-hdd/hybrid-tier/index.html", pages)
+        self.assertIn("--expected-benchmark-scenario hybrid-tier-v1", pages)
+        self.assertNotIn("results-data", workflow)
+
+        configurations = re.findall(
+            r"^\s+- fs: (\S+)\n\s+layout: (\S+)", workflow, re.MULTILINE
+        )
+        self.assertEqual(
+            configurations,
+            [
+                ("btrfs", "hybrid-dmcache"),
+                ("zfs", "hybrid-special-l2arc"),
+                ("bcachefs", "hybrid-native"),
+            ],
+        )
+
+    def test_hybrid_tier_runner_installs_cleanup_before_mutation(self):
+        runner = (ROOT / "scripts" / "run-sas-hdd-hybrid-tier.sh").read_text()
+        topology = (ROOT / "scripts" / "lib" / "sas-hdd-hybrid-tier.sh").read_text()
+        managed = (
+            ROOT / "scripts" / "managed-sas-hdd-hybrid-tier-runner.sh"
+        ).read_text()
+        launcher = (
+            ROOT / "contrib" / "sas-hdd" / "modern-fs-benchmark-hybrid-tier-run"
+        ).read_text()
+
+        self.assertLess(runner.index("trap hybrid_on_exit"), runner.index("hybrid_prepare"))
+        self.assertIn("HDD RAID10 + mirrored dm-cache writeback", topology)
+        self.assertIn("special mirror", topology)
+        self.assertIn("--foreground_target=hot", topology)
+        self.assertIn("--background_target=hdd", topology)
+        self.assertIn("--promote_target=readcache", topology)
+        self.assertIn("--durability=0", topology)
+        self.assertIn("hybrid_assert_zpool_owned", topology)
+        self.assertIn("hybrid_assert_vg_owned", topology)
+        self.assertIn("hybrid_assert_md_owned", topology)
+        self.assertIn('findmnt -rn -o TARGET,SOURCE,FSTYPE', topology)
+        self.assertIn('"$MNT" | "$MNT"/*', topology)
+        self.assertIn("retains a block-device holder after cleanup", topology)
+        self.assertIn('dmsetup remove --retry "$dm_name"', topology)
+        self.assertIn('"$HYBRID_VG"-*', topology)
+        self.assertIn("has non-scenario holder", topology)
+        self.assertLess(
+            topology.index("udevadm settle || failed=1"),
+            topology.index('dmsetup remove --retry "$dm_name"'),
+        )
+        self.assertIn('mkfs.btrfs -f -d single -m single', topology)
+        self.assertIn("BENCH_RESULT_NDEV=12", topology)
+        self.assertIn("BENCH_RESULT_NDEV=11", topology)
+        self.assertIn("cachefile=none", topology)
+        self.assertIn("bcachefs show-super", topology)
+        self.assertIn("BENCH_RESULT_DEVICE_SIZE_BYTES=omit", topology)
+        self.assertIn("benchmark-scenario:$MANAGED_BENCHMARK_SCENARIO", managed)
+        self.assertIn("/run/lock/modern-fs-benchmark.lock", managed)
+        self.assertIn("/usr/bin/env -i", launcher)
+        self.assertNotIn("$GITHUB", launcher)
+
+    def test_hybrid_tier_provisioner_has_fixed_roles_and_confirmation(self):
+        provisioner_path = (
+            ROOT / "contrib" / "sas-hdd" / "provision-hybrid-tier-storage.sh"
+        )
+        provisioner = provisioner_path.read_text()
+
+        self.assertIn("FORBIDDEN_OS_DISK=/dev/sda", provisioner)
+        self.assertIn("HDD_SECTORS=268435456", provisioner)
+        self.assertIn("HOT_SECTORS=134217728", provisioner)
+        self.assertIn("META_SECTORS=8388608", provisioner)
+        self.assertIn("Elements in grown defect list", provisioner)
+        self.assertIn("fsbench-hybrid-readcache", provisioner)
+        self.assertIn("/run/lock/modern-fs-benchmark.lock", provisioner)
+        self.assertLess(
+            provisioner.index("if (( check_only ))"),
+            provisioner.index('wipefs --all --force "$device"'),
+        )
+
+        refused = subprocess.run(
+            [str(provisioner_path)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "CONFIRM_DESTROY_SAS_HDD_HYBRID": "wrong"},
+        )
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("refusing", refused.stderr)
+
+    def test_hybrid_cleanup_rejects_failed_unmount(self):
+        topology = ROOT / "scripts" / "lib" / "sas-hdd-hybrid-tier.sh"
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'''
+set -euo pipefail
+MNT=/mnt/fsbench-test
+source "{topology}"
+HYBRID_ALL_DEVICES=()
+sync() {{ :; }}
+findmnt() {{ printf '/mnt/fsbench-test fsbench_hybrid zfs\n'; }}
+umount() {{ return 1; }}
+zpool() {{ return 1; }}
+vgs() {{ return 1; }}
+udevadm() {{ :; }}
+if hybrid_cleanup; then
+  exit 1
+fi
+''',
+            ],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_hybrid_cleanup_rejects_foreign_descendant_mount(self):
+        topology = ROOT / "scripts" / "lib" / "sas-hdd-hybrid-tier.sh"
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'''
+set -euo pipefail
+MNT=/mnt/fsbench-test
+die() {{ printf 'ERROR: %s\n' "$*" >&2; exit 1; }}
+source "{topology}"
+findmnt() {{ printf '/mnt/fsbench-test/child /dev/foreign ext4\n'; }}
+if (hybrid_assert_mounts_owned); then
+  exit 1
+fi
+''',
+            ],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("foreign ext4 mount", result.stderr)
+
+    def test_hybrid_scenario_capabilities_are_explicit(self):
+        schema = json.loads(SCHEMA.read_text())
+        self.assertEqual(
+            schema["scenario_configurations"]["hybrid-tier-v1"],
+            {
+                "btrfs/hybrid-dmcache": [
+                    "snapshots",
+                    "compression",
+                    "reflink",
+                    "snapscale",
+                ],
+                "zfs/hybrid-special-l2arc": [
+                    "snapshots",
+                    "compression",
+                    "reflink",
+                    "snapscale",
+                ],
+                "bcachefs/hybrid-native": [
+                    "snapshots",
+                    "compression",
+                    "reflink",
+                    "snapscale",
+                ],
+            },
+        )
+        self.assertIn("include_device_size", RUN_BENCH.read_text())
 
     def test_hosted_and_hardware_workflows_use_same_matrix(self):
         def matrix_profile(path):

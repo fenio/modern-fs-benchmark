@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: fs-bench-real-hw-sas-hdd
+  group: fs-bench-sas-hdd-storage
   cancel-in-progress: false
 
 permissions:

@@ -32,13 +32,20 @@ This suite benchmarks the *machinery*:
 | degraded + rebuild | fail one device: IO while degraded, then time the rebuild onto a spare |
 | snapshot-count scaling | 500 snapshots with no churn between them: create latency at the tail, snapshot-list time, remount time, bulk delete (native-snapshot filesystems) |
 | near-full / ENOSPC | on a fresh small array of the same layout: write throughput near 95% and 99% full, then fill to hard ENOSPC — can you still delete (CoW needs free space to delete), and does deleting make the fs writable again? Caveat: btrfs hits its chunk-allocation wall *before* df crosses the target on small devices (1G data chunks are a big fraction of a CI-sized array — on multi-TB disks the same wall sits at 99.9%), so its probes run at the wall; the actual fullness at each probe is recorded in the JSON (`nearfull*_pct`) |
-| corruption + scrub | write 2G of garbage onto one device behind the filesystem's back, scrub, verify the data: CoW filesystems detect and repair from checksums; md/lvm only count mismatches and may silently serve the corrupted copy |
+| corruption + scrub | write a 2G raw range onto one device behind the filesystem's back, scrub, then compare one tracked test-file hash; this probes checksum/redundancy recovery but is not a whole-filesystem health check, and the overwritten range can include allocated or unused space |
 
 Results are published as a dashboard: **<https://bartosz.fenski.pl/modern-fs-benchmark/>**
 — per-metric charts sorted best-first, aging curves, and trends across runs,
 filterable by filesystem family and layout class (e.g. "btrfs vs bcachefs,
 multi-device only"), with linear/log scale switching and a sortable table.
 Run history lives on the `results-data` branch.
+
+The suite uses the established `fio` tool and conventional MiB/s, IOPS, and
+latency units, but the exact workload recipes and composite summary index are
+project-specific rather than an industry-standard benchmark. It does not use
+`O_DIRECT`: documented cold-read phases drop caches before normal buffered
+reads, while other phases use normal buffered I/O with explicit durability
+barriers where noted.
 
 Every result records the exact tools *and kernel-module* versions tested —
 essential for ZFS and bcachefs, which are out-of-tree, where the kernel
@@ -104,14 +111,18 @@ re-proves it every couple of hours):
   data checksums.** Raid protects against a *missing* disk, not a *lying*
   one: when a copy goes bad (disk firmware, cable, controller, bad RAM,
   power cut mid-write), the array cannot tell which copy is right. In our
-  corruption test these stacks return garbage to the application **with no
-  error whatsoever** — reads succeed, exit codes are 0, and the damage
-  propagates into backups silently. A scrub *counts* mismatches; it cannot
-  say which side is correct.
+  corruption test these stacks have returned garbage to the application
+  **with no error whatsoever** — reads succeed, exit codes are 0, and the
+  damage can propagate into backups silently. A scrub *counts* mismatches;
+  it cannot say which side is correct. An intact hash in one run is not proof
+  of repair: read balancing may simply select the good copy.
 - **btrfs, ZFS, and bcachefs verify every read against checksums** and,
-  given any redundancy, repair the bad copy on the fly. Every corruption
-  run so far: all injected errors detected, all repaired, file contents
-  intact — including under native encryption and on parity layouts.
+  given appropriate redundancy, can reconstruct a bad allocated block from a
+  good replica or parity. Published redundant-layout runs have kept the tracked
+  test file readable and hash-identical, including native-encryption and parity
+  layouts. Nonzero found counts show detected damage, while nonzero repaired
+  counts provide the strongest evidence of reconstruction. Zero or unavailable
+  counts do not prove that the raw overwrite hit the tracked file.
 - **The classic stack *can* buy the same guarantee** — LVM raid with
   `--raidintegrity y` (dm-integrity) is the first classic layout to pass
   our corruption phase — but almost nobody runs it, and the performance
@@ -123,6 +134,13 @@ non-checksumming stack, no benchmark number compensates for corruption you
 won't discover until years later. That risk is invisible in every classic
 filesystem benchmark; here it's a first-class result
 (*corruption + scrub* on the dashboard).
+
+The dashboard's corruption badge is deliberately scoped. `SURVIVED` means the
+single tracked `read.dat` file was still readable and had the same MD5 after
+scrub; `FAIL` means it differed or could not be read; `UNPROVEN` means the hash
+matched on a stack without end-to-end data checksums. The test does not hash the
+entire filesystem, prove every overwritten byte was allocated, or perform a
+post-corruption remount for every backend.
 
 ## How it runs
 
@@ -136,7 +154,7 @@ with source file and line — so "what exactly was run" is never a question.
 (`BENCH_TRACE=1` mirrors it into the live log instead.)
 
 **Interpret CI numbers carefully.** Runners are shared VMs and all "devices"
-live on one virtual disk, so absolute MB/s is meaningless and RAID striping
+live on one virtual disk, so absolute MiB/s is meaningless and RAID striping
 gains are fiction. Matrix jobs also run in parallel, **each on its own
 ephemeral VM** — so comparing filesystem A against filesystem B compares two
 different machines. Mitigations, from strongest signal to weakest:
@@ -235,6 +253,11 @@ and dashboard are respectively `bench-real-hw-sas-hdd.yml`,
 `/sas-hdd/`. Every result carries `hardware_profile: "sas-hdd"`, and
 publication rejects a missing or mismatched profile so results from different
 machines cannot enter the same trend series.
+
+The separate [`hybrid-tier-v1`](docs/sas-hdd-hybrid-tier.md) scenario compares
+Btrfs over mirrored `dm-cache`, ZFS special/L2ARC classes, and native bcachefs
+foreground/background/promote targets. It publishes independently under
+`/sas-hdd/hybrid-tier/` and never expands the default hosted matrix.
 
 **The plan is bigger than loop devices.** CI is the regression-tracking
 harness; the goal is to gather dedicated hardware and run the REAL tests

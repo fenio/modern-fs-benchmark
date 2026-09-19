@@ -53,10 +53,10 @@ out=$(fio_json calib-randwrite --directory="$DISK_DIR" --rw=randwrite --bs=4k \
   --size=256M --runtime=15 --time_based --fdatasync=16)
 CALIB_RAND_IOPS=$(jq '.jobs[0].write.iops' "$out")
 rm -f "$DISK_DIR"/calib-*.0.0
-log "calibration: seq ${CALIB_SEQ_MBPS%.*} MB/s, rand ${CALIB_RAND_IOPS%.*} IOPS"
+log "calibration: seq ${CALIB_SEQ_MBPS%.*} MiB/s, rand ${CALIB_RAND_IOPS%.*} IOPS"
 
 # Calibration floor: on shared CI runners an unlucky VM (observed: ~190
-# vs ~400 MB/s host disk) produces junk numbers — fail fast so the job
+# vs ~400 MiB/s host disk) produces junk numbers — fail fast so the job
 # can be rerun on a fresh runner instead of polluting the results.
 # Disabled by default and always skipped on real hardware.
 CALIB_MIN_SEQ_MBPS=${CALIB_MIN_SEQ_MBPS:-0}
@@ -64,7 +64,7 @@ CALIB_MIN_RAND_IOPS=${CALIB_MIN_RAND_IOPS:-0}
 if [ -z "${BENCH_DEVICES:-}" ]; then
   if [ "${CALIB_SEQ_MBPS%.*}" -lt "$CALIB_MIN_SEQ_MBPS" ] \
      || [ "${CALIB_RAND_IOPS%.*}" -lt "$CALIB_MIN_RAND_IOPS" ]; then
-    die "runner below calibration floor (seq ${CALIB_SEQ_MBPS%.*}/${CALIB_MIN_SEQ_MBPS} MB/s, rand ${CALIB_RAND_IOPS%.*}/${CALIB_MIN_RAND_IOPS} IOPS) — rerun on a fresh runner"
+    die "runner below calibration floor (seq ${CALIB_SEQ_MBPS%.*}/${CALIB_MIN_SEQ_MBPS} MiB/s, rand ${CALIB_RAND_IOPS%.*}/${CALIB_MIN_RAND_IOPS} IOPS) — rerun on a fresh runner"
   fi
 fi
 }
@@ -593,7 +593,7 @@ if [ "$SNAPSHOTS_OK" = 1 ]; then
     DIV_SNAP_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out")
   fi
 fi
-log "divergence: plain ${DIV_PLAIN_MBPS%.*}, clone ${DIV_CLONE_MBPS%.*}, after-snapshot ${DIV_SNAP_MBPS%.*} MB/s"
+log "divergence: plain ${DIV_PLAIN_MBPS%.*}, clone ${DIV_CLONE_MBPS%.*}, after-snapshot ${DIV_SNAP_MBPS%.*} MiB/s"
 }
 
 # --- Phase 7: degraded mode + rebuild --------------------------------------
@@ -756,7 +756,7 @@ if [ -z "${BENCH_DEVICES:-}" ]; then
          conv=fsync status=none 2>/dev/null; then
       ENOSPC_RECOVER_OK=true
     fi
-    log "near-full: 95%=$NEARFULL95_MBPS MB/s, 99%=$NEARFULL99_MBPS MB/s, delete@full=$ENOSPC_DELETE_OK, write-after-delete=$ENOSPC_RECOVER_OK"
+    log "near-full: 95%=$NEARFULL95_MBPS MiB/s, 99%=$NEARFULL99_MBPS MiB/s, delete@full=$ENOSPC_DELETE_OK, write-after-delete=$ENOSPC_RECOVER_OK"
     fs_teardown || true
   else
     log "ENOSPC phase: small-array setup failed — skipping"
@@ -766,9 +766,14 @@ fi
 
 # --- Assemble result -------------------------------------------------------
 write_result() {
-local include_hardware_random_scaling=false
+local include_hardware_random_scaling=false include_device_size=true
 hardware_random_scaling_enabled && include_hardware_random_scaling=true
-DEVICE_SIZE_BYTES=$(blockdev --getsize64 "${DEVICES[0]}")
+if [ "${BENCH_RESULT_DEVICE_SIZE_BYTES:-}" = omit ]; then
+  include_device_size=false
+  DEVICE_SIZE_BYTES=0
+else
+  DEVICE_SIZE_BYTES=${BENCH_RESULT_DEVICE_SIZE_BYTES:-$(blockdev --getsize64 "${DEVICES[0]}")}
+fi
 AGING_JSON=$(printf '%s\n' "${AGING_BW[@]}" | jq -s '.')
 if [ "${#SNAP_MS[@]}" -gt 0 ]; then
   # median, not mean — VM clock steps can corrupt individual samples
@@ -784,10 +789,12 @@ jq -n \
   --arg kernel "$(uname -r)" \
   --arg version "$FS_VERSION" \
   --arg date "$(date -u +%FT%TZ)" \
-  --arg devices "${BENCH_DEVICES:-loop}" \
+  --arg devices "${BENCH_RESULT_DEVICES:-${BENCH_DEVICES:-loop}}" \
   --arg hardware_profile "${BENCH_HARDWARE_PROFILE:-}" \
   --arg benchmark_revision "${BENCH_REVISION:-}" \
-  --argjson ndev "${#DEVICES[@]}" \
+  --arg benchmark_scenario "${BENCH_SCENARIO:-}" \
+  --arg topology "${BENCH_TOPOLOGY:-}" \
+  --argjson ndev "${BENCH_RESULT_NDEV:-${#DEVICES[@]}}" \
   --argjson device_size_bytes "$DEVICE_SIZE_BYTES" \
   --argjson seqwrite_mbps "$SEQWRITE_MBPS" \
   --argjson randwrite_iops "$RANDWRITE_IOPS" \
@@ -856,9 +863,10 @@ jq -n \
   --argjson calib_seqwrite_mbps "$CALIB_SEQ_MBPS" \
   --argjson calib_randwrite_iops "$CALIB_RAND_IOPS" \
   --argjson include_hardware_random_scaling "$include_hardware_random_scaling" \
+  --argjson include_device_size "$include_device_size" \
   '({schema_version: 5,
     fs: $fs, layout: $layout, kernel: $kernel, version: $version, date: $date,
-    devices: $devices, ndev: $ndev, device_size_bytes: $device_size_bytes,
+    devices: $devices, ndev: $ndev,
     calibration: {seqwrite_mbps: $calib_seqwrite_mbps,
                   randwrite_iops: $calib_randwrite_iops},
     results: ({seqwrite_mbps: $seqwrite_mbps,
@@ -926,11 +934,17 @@ jq -n \
                 randwrite16_sharded_iops: $randwrite16_sharded_iops,
                 randread8_iops: $randread8_iops,
                 randread16_iops: $randread16_iops
-              } else {} end))} +
+               } else {} end))} +
+    (if $include_device_size then {device_size_bytes: $device_size_bytes}
+     else {} end) +
     (if $hardware_profile == "" then {}
      else {hardware_profile: $hardware_profile} end) +
     (if $benchmark_revision == "" then {}
-     else {benchmark_revision: $benchmark_revision} end))' \
+     else {benchmark_revision: $benchmark_revision} end) +
+    (if $benchmark_scenario == "" then {}
+     else {benchmark_scenario: $benchmark_scenario} end) +
+    (if $topology == "" then {}
+     else {topology: $topology} end))' \
   > "$RESULT_FILE"
 
 python3 "$SCRIPT_DIR/validate-result.py" "$RESULT_FILE"
