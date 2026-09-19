@@ -74,6 +74,8 @@ jobs:
         run: |
           python3 scripts/make-dashboard.py --runs standard-data/runs --out site/index.html \
             --repo "https://github.com/${{ github.repository }}" \
+            --dashboard-link 'Real hardware (farm3)=real-hw/' \
+            --dashboard-link 'SAS HDD=sas-hdd/' \
             --setup-detail 'Environment=GitHub-hosted Ubuntu VM; each filesystem configuration runs in a fresh VM' \
             --setup-detail 'Devices=Four 16 GiB loop devices plus one 16 GiB rebuild spare; the ZFS-single job uses one 32 GiB loop device' \
             --setup-detail 'Storage caveat=Loop-device files share the VM ephemeral backing storage; they are not independent physical disks' \
@@ -84,7 +86,9 @@ jobs:
             python3 scripts/make-dashboard.py --runs hardware-data/runs --out site/real-hw/index.html \
               --repo "https://github.com/${{ github.repository }}" \
               --hardware-profile farm3 --expected-hardware-profile farm3 \
-              --allow-missing-hardware-profile --history-branch results-real-hw
+              --allow-missing-hardware-profile --history-branch results-real-hw \
+              --dashboard-link 'Hosted CI=../' \
+              --dashboard-link 'SAS HDD=../sas-hdd/'
           fi
 
       - name: Build sas-hdd dashboard
@@ -96,6 +100,8 @@ jobs:
               --repo "https://github.com/${{ github.repository }}" \
               --hardware-profile sas-hdd --expected-hardware-profile sas-hdd \
               --history-branch results-real-hw-sas-hdd \
+              --dashboard-link 'Hosted CI=../' \
+              --dashboard-link 'Real hardware (farm3)=../real-hw/' \
               --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
               --setup-detail 'Physical media=Six independent 6 TB 7200 RPM SAS HDDs: four 16 GiB member partitions, one 16 GiB rebuild spare, and one dedicated 32 GiB ZFS-single partition' \
               --setup-detail 'Mirrored layouts=Linux md/LVM RAID10, two striped ZFS mirror pairs, Btrfs RAID1, or bcachefs replicas=2 across four member disks' \
@@ -132,6 +138,9 @@ jobs:
               --hardware-profile sas-hdd --expected-hardware-profile sas-hdd \
               --expected-benchmark-scenario hybrid-tier-v1 \
               --history-branch results-real-hw-sas-hdd-hybrid-tier-v1 \
+              --dashboard-link 'Hosted CI=../../' \
+              --dashboard-link 'Real hardware (farm3)=../../real-hw/' \
+              --dashboard-link 'SAS HDD baseline=../' \
               --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
               --setup-detail 'Physical media=Eleven drives: eight SAS HDDs and three SAS SSDs' \
               --setup-detail 'Allocation=Eight 128 GiB HDD data partitions; two SSDs each provide 64 GiB durable data plus 4 GiB cache metadata; the third SSD provides a 64 GiB disposable read cache' \

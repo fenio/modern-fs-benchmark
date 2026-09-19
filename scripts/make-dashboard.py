@@ -509,6 +509,13 @@ def main():
         metavar="LABEL=VALUE",
         help="add a labeled testbed or topology detail at the top of the dashboard",
     )
+    ap.add_argument(
+        "--dashboard-link",
+        action="append",
+        default=[],
+        metavar="LABEL=URL",
+        help="add a link to another benchmark environment",
+    )
     ap.add_argument("--history-branch", default="results-data")
     ap.add_argument("--window", type=int, default=100,
                     help="newest runs kept raw; older collapsed to daily medians")
@@ -522,6 +529,12 @@ def main():
         if not separator or not label.strip() or not value.strip():
             ap.error("--setup-detail must be a nonempty LABEL=VALUE pair")
         setup_details.append({"label": label.strip(), "value": value.strip()})
+    dashboard_links = []
+    for link in args.dashboard_link:
+        label, separator, url = link.partition("=")
+        if not separator or not label.strip() or not url.strip():
+            ap.error("--dashboard-link must be a nonempty LABEL=URL pair")
+        dashboard_links.append({"label": label.strip(), "url": url.strip()})
 
     try:
         raw_runs = load_runs(
@@ -579,6 +592,7 @@ def main():
         "hardwareProfile": args.hardware_profile or args.expected_hardware_profile,
         "benchmarkScenario": args.expected_benchmark_scenario,
         "setupDetails": setup_details,
+        "dashboardLinks": dashboard_links,
         "historyBranch": args.history_branch,
         "docs": {k: {"text": t, "src": [{"label": l, "url": SRC + p} for l, p in s]}
                  for k, (t, s) in DOCS.items()
@@ -627,6 +641,13 @@ h2 { font-size: 15px; font-weight: 650; margin: 40px 0 4px; }
 .sub { color: var(--ink-2); margin-top: 4px; }
 .sub a { color: inherit; }
 .note { color: var(--muted); font-size: 12.5px; margin: 2px 0 14px; }
+.dashnav { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px; }
+.dashnav span { color: var(--muted); font-size: 12.5px; margin-right: 2px; }
+.dashnav a {
+  border: 1px solid var(--ring); border-radius: 999px; color: var(--ink-2);
+  font-size: 12px; padding: 3px 10px; text-decoration: none;
+}
+.dashnav a:hover { border-color: var(--axis); color: var(--ink); }
 .setup { margin-top: 18px; padding: 14px 16px; }
 .setup h2 { margin: 0 0 10px; }
 .setup dl { display: grid; grid-template-columns: minmax(110px, 0.18fr) 1fr; gap: 7px 18px; }
@@ -1541,6 +1562,16 @@ app.appendChild(el("p", {class: "note"},
   (DATA.hardwareProfile
   ? `Dedicated real-hardware profile: ${DATA.hardwareProfile}. Results from other hardware profiles are published separately.`
   : "CI runs use loop devices on shared ephemeral VMs (one VM per filesystem): compare shapes and ratios, not absolute MiB/s. Each job records a host-calibration anchor — see the table.")));
+if (DATA.dashboardLinks.length) {
+  const nav = el("nav", {class: "dashnav", "aria-label": "Other benchmark environments"});
+  nav.appendChild(el("span", {}, "Other environments"));
+  DATA.dashboardLinks.forEach(link => {
+    const anchor = el("a", {href: link.url});
+    anchor.textContent = link.label;
+    nav.appendChild(anchor);
+  });
+  app.appendChild(nav);
+}
 if (DATA.setupDetails.length) {
   const setup = el("section", {class: "card setup"});
   setup.appendChild(el("h2", {}, "Test setup"));

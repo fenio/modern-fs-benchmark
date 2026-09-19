@@ -428,6 +428,34 @@ class DashboardRegressionTests(unittest.TestCase):
         self.assertIn('setup.appendChild(el("h2", {}, "Test setup"));', html)
         self.assertIn("description.textContent = detail.value", html)
 
+    def test_dashboard_links_to_other_environments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "index.html"
+            result = run_script(
+                DASHBOARD,
+                "--runs",
+                FIXTURE_RUNS,
+                "--out",
+                output,
+                "--dashboard-link",
+                "Real hardware=real-hw/",
+                "--dashboard-link",
+                "SAS HDD=sas-hdd/",
+            )
+            html = output.read_text()
+            data = dashboard_data(html)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            data["dashboardLinks"],
+            [
+                {"label": "Real hardware", "url": "real-hw/"},
+                {"label": "SAS HDD", "url": "sas-hdd/"},
+            ],
+        )
+        self.assertIn('"aria-label": "Other benchmark environments"', html)
+        self.assertIn("anchor.textContent = link.label", html)
+
 
 class AuditRegressionTests(unittest.TestCase):
     def test_representative_history_has_no_anomalies(self):
@@ -1014,6 +1042,12 @@ class ResultSchemaTests(unittest.TestCase):
         self.assertIn("Btrfs=Single-profile Btrfs on eight-HDD md RAID10", pages)
         self.assertIn("ZFS=Four HDD mirror vdevs", pages)
         self.assertIn("bcachefs=Replicated HDD background target", pages)
+        self.assertIn("Real hardware (farm3)=real-hw/", pages)
+        self.assertIn("SAS HDD=sas-hdd/", pages)
+        self.assertIn("Hosted CI=../", pages)
+        self.assertIn("Real hardware (farm3)=../real-hw/", pages)
+        self.assertIn("Hosted CI=../../", pages)
+        self.assertIn("SAS HDD baseline=../", pages)
         self.assertLess(
             pages.index("actions/upload-pages-artifact"),
             pages.index("actions/deploy-pages"),
