@@ -203,6 +203,10 @@ class DashboardRegressionTests(unittest.TestCase):
         self.assertIsNone(data["benchmarkScenario"])
         self.assertEqual(data["setupDetails"], [])
         self.assertEqual(data["historyBranch"], "results-data")
+        self.assertIn(
+            "Runs produced before this barrier was added",
+            data["docs"]["sparse_create_ms"]["text"],
+        )
         self.assertIn('href="https://github.com/nasty-project/nasty"', html)
         for legacy_section in (
             "Latest run",
@@ -1288,6 +1292,49 @@ class BenchmarkPhaseTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), self.phases)
+
+    def test_sparse_create_starts_after_shared_sync_barrier(self):
+        source = RUN_BENCH.read_text()
+        sparse_phase = source[
+            source.index("phase_sparse_files() {") : source.index(
+                "# --- Phase 3.8", source.index("phase_sparse_files() {")
+            )
+        ]
+        definitions = [
+            path
+            for path in ROOT.rglob("*.sh")
+            if "phase_sparse_files() {" in path.read_text()
+        ]
+
+        self.assertLess(
+            sparse_phase.index("\nsync\n"),
+            sparse_phase.index("t = time.perf_counter()"),
+        )
+        self.assertEqual(definitions, [RUN_BENCH])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            events = Path(tmp) / "events"
+            result = run_benchmark_shell(
+                r'''
+DATA=$2
+EVENTS=$3
+log() { :; }
+sync() { printf 'sync\n' >> "$EVENTS"; }
+python3() {
+  cat >/dev/null
+  [ "$(cat "$EVENTS")" = sync ] || return 42
+  printf '%s\n' '{"sparse_create_ms":1,"sparse_create_bytes":0,"sparse_grow_ms":1,"sparse_grow_bytes":0}'
+}
+jq() { printf '0\n'; }
+phase_sparse_files
+''',
+                tmp,
+                events,
+            )
+            event_text = events.read_text()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(event_text, "sync\n")
 
     def test_sequential_write_phase_can_run_with_stubs(self):
         with tempfile.TemporaryDirectory() as tmp:

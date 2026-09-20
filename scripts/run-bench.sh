@@ -290,6 +290,11 @@ log "source tree: create ${SMALLTREE_CREATE_MS}ms, cp -r ${SMALLTREE_CP_MS}ms, r
 # bytes; (b) double a written 256MiB file — time + allocation delta.
 phase_sparse_files() {
 log "phase: sparse file ops (ftruncate)"
+# The preceding source-tree phase removes its original 20k-file tree after
+# timing the copied-tree deletion. Flush that deferred metadata work before
+# the first ftruncate+fsync timer so every filesystem crosses the same
+# durability barrier. Backend maintenance may continue asynchronously.
+sync
 SPARSE_JSON=$(python3 - "$DATA" <<'PY'
 import json, os, sys, time
 base = sys.argv[1]
