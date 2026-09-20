@@ -126,6 +126,7 @@ jobs:
           name: hardware-results-${{ matrix.fs }}-${{ matrix.layout }}
           path: results/
           if-no-files-found: ignore
+          overwrite: true
 
   publish:
     name: Store hardware results

@@ -58,6 +58,7 @@ jobs:
           name: sas-hdd-hybrid-tier-results-${{ matrix.fs }}
           path: results/
           if-no-files-found: ignore
+          overwrite: true
 
   publish:
     name: Store hybrid-tier-v1 results

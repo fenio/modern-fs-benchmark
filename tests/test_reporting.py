@@ -35,6 +35,7 @@ SAS_HDD_BENCH_WORKFLOW = (
 HYBRID_TIER_WORKFLOW = (
     ROOT / ".github" / "workflows" / "bench-real-hw-sas-hdd-hybrid-tier.yml"
 )
+RERUN_SLOW_WORKFLOW = ROOT / ".github" / "workflows" / "rerun-slow.yml"
 PAGES_WORKFLOW = ROOT / ".github" / "workflows" / "publish-pages.yml"
 BCACHEFS_REPRO_WORKFLOW = (
     ROOT / ".github" / "workflows" / "repro-bcachefs-ec.yml"
@@ -1052,6 +1053,32 @@ class ResultSchemaTests(unittest.TestCase):
             pages.index("actions/upload-pages-artifact"),
             pages.index("actions/deploy-pages"),
         )
+
+    def test_result_artifacts_replace_failed_attempts_on_retry(self):
+        for workflow_path in (
+            BENCH_WORKFLOW,
+            HARDWARE_BENCH_WORKFLOW,
+            SAS_HDD_BENCH_WORKFLOW,
+            HYBRID_TIER_WORKFLOW,
+        ):
+            workflow = workflow_path.read_text()
+            upload = workflow.index("uses: actions/upload-artifact@v7")
+            publish = workflow.index("\n  publish:", upload)
+            self.assertIn("overwrite: true", workflow[upload:publish])
+
+    def test_slow_runner_retry_ignores_publisher_only_failures(self):
+        workflow = RERUN_SLOW_WORKFLOW.read_text()
+
+        self.assertIn("Rerun failed benchmark jobs on fresh runners", workflow)
+        self.assertIn(
+            "/attempts/${{ github.event.workflow_run.run_attempt }}/jobs", workflow
+        )
+        self.assertIn('startswith(\"bench (\")', workflow)
+        self.assertIn('.conclusion == \"failure\"', workflow)
+        self.assertIn('.conclusion == \"timed_out\"', workflow)
+        self.assertIn("not retrying publisher failures", workflow)
+        self.assertIn("[.status, .run_attempt] | @tsv", workflow)
+        self.assertIn("ignoring stale attempt", workflow)
 
     def test_unversioned_results_use_v1_contract(self):
         result = run_script(
