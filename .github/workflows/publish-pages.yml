@@ -82,7 +82,7 @@ jobs:
             --setup-detail 'Devices=Four 16 GiB loop devices plus one 16 GiB rebuild spare; the ZFS-single job uses one 32 GiB loop device' \
             --setup-detail 'Storage caveat=Loop-device files share the VM ephemeral backing storage; they are not independent physical disks' \
             --setup-detail 'Mirrored layouts=Linux md/LVM RAID10, two striped ZFS mirror pairs, Btrfs RAID1, or bcachefs replicas=2 across four loop devices' \
-            --setup-detail 'Parity layouts=Linux md RAID6, ZFS RAIDZ1/RAIDZ2, Btrfs RAID6 with RAID1C3 metadata, or bcachefs erasure coding across four loop devices' \
+            --setup-detail 'Parity layouts=Linux md RAID6, XFS on md RAID5/6 over per-member dm-integrity, ZFS RAIDZ1/RAIDZ2, Btrfs RAID6 with RAID1C3 metadata, or bcachefs erasure coding across four loop devices' \
             --setup-detail 'Single-device layouts=Use one loop device'
           if compgen -G "hardware-data/runs/*/result-*.json" >/dev/null; then
             python3 scripts/make-dashboard.py --runs hardware-data/runs --out site/real-hw/index.html \
@@ -111,7 +111,7 @@ jobs:
               --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
               --setup-detail 'Physical media=Six independent 6 TB 7200 RPM SAS HDDs: four 16 GiB member partitions, one 16 GiB rebuild spare, and one dedicated 32 GiB ZFS-single partition' \
               --setup-detail 'Mirrored layouts=Linux md/LVM RAID10, two striped ZFS mirror pairs, Btrfs RAID1, or bcachefs replicas=2 across four member disks' \
-              --setup-detail 'Parity layouts=Linux md RAID6, ZFS RAIDZ1/RAIDZ2, Btrfs RAID6 with RAID1C3 metadata, or bcachefs erasure coding across four member disks' \
+              --setup-detail 'Parity layouts=Linux md RAID6, XFS on md RAID5/6 over per-member dm-integrity, ZFS RAIDZ1/RAIDZ2, Btrfs RAID6 with RAID1C3 metadata, or bcachefs erasure coding across four member disks' \
               --setup-detail 'Single-device layouts=Use one member disk; ZFS single uses the separate 32 GiB disk'
           fi
 

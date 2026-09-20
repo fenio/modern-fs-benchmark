@@ -140,8 +140,13 @@ fs_scrub() { return 1; }
 fs_version() { echo ""; }
 
 remove_stale_benchmark_mappings() {
-  local d holder device node owned
-  for d in /dev/mapper/fsbench-pv*; do
+  local d holder device node owned consumer benchmark_md='' md_in_use=0
+  local -a mappings=()
+  if [ -e /dev/md/fsbench ]; then
+    benchmark_md=$(readlink -f /dev/md/fsbench)
+    benchmark_md=${benchmark_md##*/}
+  fi
+  for d in /dev/mapper/fsbench-pv* /dev/mapper/fsbench-int*; do
     [ -e "$d" ] || continue
     holder=$(readlink -f "$d")
     holder=${holder##*/}
@@ -157,8 +162,50 @@ remove_stale_benchmark_mappings() {
     done
     [ "$owned" = 1 ] \
       || die "mapping $d is not attached to a configured benchmark device"
+    mappings+=("$d")
+    for consumer in "/sys/class/block/$holder/holders/"*; do
+      [ -e "$consumer" ] || continue
+      node=${consumer##*/}
+      if [ -n "$benchmark_md" ] && [ "$node" = "$benchmark_md" ]; then
+        md_in_use=1
+      else
+        die "mapping $d is held by unexpected block device $node"
+      fi
+    done
+  done
+  if [ "$md_in_use" = 1 ]; then
+    mdadm --stop /dev/md/fsbench \
+      || die "stale benchmark array /dev/md/fsbench is still busy"
+    udevadm settle
+  fi
+  for d in "${mappings[@]}"; do
     dmsetup remove --retry "${d##*/}" 2>/dev/null \
       || die "stale benchmark mapping $d is still busy"
+  done
+}
+
+remove_stale_loop_integrity_mappings() {
+  local mapping node slave backing
+  local -a devices=()
+  for mapping in /dev/mapper/fsbench-int*; do
+    [ -e "$mapping" ] || continue
+    node=$(readlink -f "$mapping")
+    node=${node##*/}
+    for slave in "/sys/class/block/$node/slaves/"*; do
+      [ -e "$slave" ] || continue
+      slave=${slave##*/}
+      [[ $slave == loop* ]] \
+        || die "stale integrity mapping $mapping is not loop-backed"
+      backing=$(losetup --noheadings --raw --output BACK-FILE "/dev/$slave")
+      [[ $backing == "$DISK_DIR/"* ]] \
+        || die "stale integrity mapping $mapping is not owned by $DISK_DIR"
+      devices+=("/dev/$slave")
+    done
+  done
+  ((${#devices[@]})) || return 0
+  remove_stale_benchmark_mappings "${devices[@]}"
+  for slave in "${devices[@]}"; do
+    losetup -d "$slave" || die "failed to detach stale benchmark loop $slave"
   done
 }
 
@@ -193,6 +240,7 @@ setup_devices() {
       udevadm settle
     fi
   else
+    remove_stale_loop_integrity_mappings
     log "creating $NDEV loop devices of $DEV_SIZE (+1 spare) in $DISK_DIR"
     mkdir -p "$DISK_DIR"
     LOOPS_CREATED=1
@@ -221,14 +269,26 @@ make_loop() {
 }
 
 teardown_devices() {
-  fs_teardown || true
+  local teardown_ok=1 detach_ok=1 dev
+  if ! fs_teardown; then
+    sleep 1
+    fs_teardown || teardown_ok=0
+  fi
   luks_close_all
   if [ "$LOOPS_CREATED" = 1 ]; then
-    local dev
+    if [ "$teardown_ok" = 0 ]; then
+      log "WARNING: preserving loop devices and backing files after teardown failure"
+      return 1
+    fi
     for dev in "${ALL_LOOPS[@]}"; do
-      losetup -d "$dev" 2>/dev/null || true
+      losetup -d "$dev" 2>/dev/null || detach_ok=0
     done
-    rm -rf "$DISK_DIR"
+    if [ "$detach_ok" = 1 ]; then
+      rm -rf "$DISK_DIR"
+    else
+      log "WARNING: preserving backing files because a loop device is still active"
+      return 1
+    fi
   fi
 }
 

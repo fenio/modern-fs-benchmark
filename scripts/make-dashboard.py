@@ -34,6 +34,8 @@ ENTITY_ORDER = [
     "xfs/lvm-raid10",
     "xfs/zvol",
     "xfs/lvm-raid10-int",
+    "xfs/md-raid5-int",
+    "xfs/md-raid6-int",
     "zfs/mirror",
     "zfs/mirror-8k",
     "zfs/single",
@@ -344,7 +346,11 @@ DOCS = {
         "bcachefs scrub, md/lvm sync-action 'check'. Plain md/lvm can only COUNT mismatches "
         "because it has no checksums to identify the good copy; the dm-integrity variant is "
         "the exception. Runs after the rebuild, so it validates that too. "
-        "The corruption window may include allocated data, metadata, or unused space. The "
+        "For md parity over per-member dm-integrity, a checksum failure is returned to md as "
+        "a member read error so parity can reconstruct and rewrite that sector. Those rows use "
+        "bitmap mode, which avoids journal-mode double writes but cannot guarantee detection "
+        "for corruption coincident with a crash in a dirty region. The corruption window may "
+        "include allocated data, metadata, or unused space. The "
         "corruption-probe verdict compares only the md5 of the 2G read.dat test file before "
         "and after; it is not a whole-filesystem health check. SURVIVED means that file was "
         "readable and byte-identical, while FAIL means it changed or could not be read. "
@@ -380,7 +386,8 @@ DOCS = {
 }
 
 with open(os.path.join(os.path.dirname(__file__), "result-schema.json")) as fh:
-    metric_specs = json.load(fh)["metrics"]
+    RESULT_SCHEMA = json.load(fh)
+    metric_specs = RESULT_SCHEMA["metrics"]
     METRICS = [
         (metric["key"], metric["label"], metric["unit"], metric["better"])
         for metric in metric_specs
@@ -432,6 +439,8 @@ def load_runs(runs_dir, expected_hardware_profile=None,
             entry = dict(doc.get("results", {}))
             entry["calibration"] = doc.get("calibration")
             entry["version"] = doc.get("version") or None
+            entry["schema_version"] = doc.get("schema_version", 1)
+            entry["block_queue"] = doc.get("block_queue")
             results[entity] = entry
             dates.append(doc.get("date", ""))
             kernels.add(doc.get("kernel", "?"))
@@ -476,12 +485,17 @@ def collapse_old(runs, keep):
     return agg + recent
 
 
-def entity_list(runs):
+def entity_list(runs, benchmark_scenario=None):
     seen = {e for r in runs for e in r["results"]}
     ordered = [e for e in ENTITY_ORDER if e in seen]
     ordered += sorted(seen - set(ENTITY_ORDER))
     slots = dict(FAMILY_SLOT)
     variants = {}
+    configurations = RESULT_SCHEMA["configurations"]
+    if benchmark_scenario:
+        configurations = RESULT_SCHEMA.get("scenario_configurations", {}).get(
+            benchmark_scenario, configurations
+        )
     out = []
     for e in ordered:
         fam = e.split("/")[0]
@@ -489,7 +503,22 @@ def entity_list(runs):
             slots[fam] = max(slots.values()) + 1  # unknown family: next slot
         vi = variants.get(fam, 0)
         variants[fam] = vi + 1
-        out.append({"id": e, "fi": slots[fam], "vi": vi})
+        capabilities = list(configurations.get(e, []))
+        if e.startswith("zfs/") and "reflink" in capabilities:
+            has_reflink_contract = any(
+                result.get("schema_version", 1) >= 5
+                for run in runs
+                for entity, result in run["results"].items()
+                if entity == e
+            )
+            if not has_reflink_contract:
+                capabilities.remove("reflink")
+        out.append({
+            "id": e,
+            "fi": slots[fam],
+            "vi": vi,
+            "capabilities": capabilities,
+        })
     if max(v["fi"] for v in out) > 7:
         print("WARNING: more than 8 families; hues reused", file=sys.stderr)
     return out
@@ -582,11 +611,24 @@ def main():
                     stale.append(e)
                 break
 
+    observed_schedulers = sorted({
+        queue.get("scheduler") or "unknown"
+        for result in merged.values()
+        for queue in (result.get("block_queue") or [])
+        if isinstance(queue, dict)
+    })
+    if observed_schedulers:
+        setup_details.append({
+            "label": "Observed leaf I/O scheduler(s)",
+            "value": ", ".join(observed_schedulers)
+                + "; per-device queue settings are shown in the table",
+        })
+
     data = {
         "latest": {"date": newest["date"], "kernel": newest["kernel"],
                    "results": merged},
         "stale": stale,
-        "entities": entity_list(runs),
+        "entities": entity_list(runs, args.expected_benchmark_scenario),
         "metrics": [
             {"key": k, "label": l, "unit": u, "better": b}
             for k, l, u, b in METRICS
@@ -842,8 +884,9 @@ const niceMax = m => { if (m <= 0) return 1;
 
 // ---- view state -------------------------------------------------------------
 // Two AND-ed dimensions (family x layout class) + per-entity chip overrides.
-const COW = new Set(["btrfs", "bcachefs", "zfs"]);
+const NATIVE_COW = new Set(["btrfs", "bcachefs", "zfs"]);
 const famOf = e => e.id.split("/")[0];
+const hasCapability = (e, capability) => (e.capabilities || []).includes(capability);
 const layoutOf = e => e.id.endsWith("/single") ? "single" : "multi";
 const famAll = [...new Set(ents.map(famOf))];
 const famSel = new Set(famAll);
@@ -887,8 +930,11 @@ const scoreMedian = values => {
 const scoreGeomean = values => values.length
   ? Math.exp(values.reduce((sum, value) => sum + Math.log(value), 0) / values.length)
   : null;
-const integrityCapable = entity => COW.has(famOf(entity))
-  || entity.id === "xfs/zvol" || entity.id === "xfs/lvm-raid10-int";
+const CHECKSUMMED_CLASSIC = new Set([
+  "xfs/zvol", "xfs/lvm-raid10-int", "xfs/md-raid5-int", "xfs/md-raid6-int",
+]);
+const integrityCapable = entity => NATIVE_COW.has(famOf(entity))
+  || CHECKSUMMED_CLASSIC.has(entity.id);
 let indexSortCol = null, indexSortDir = 1;  // null = matrix order
 
 function scoreSummaryData(view) {
@@ -1508,6 +1554,15 @@ const cols = [
    get: (e, r, c) => r.enospc_recover_ok == null ? null : (r.enospc_recover_ok ? "yes" : "NO")},
   {label: "calib seq", unit: "MiB/s", get: (e, r, c) => c.seqwrite_mbps},
   {label: "calib rand", unit: "IOPS", get: (e, r, c) => c.randwrite_iops},
+  {label: "leaf block queue", str: true, get: (e, r, c) => {
+    if (!Array.isArray(r.block_queue)) return null;
+    return [...r.block_queue].sort((a, b) => a.device.localeCompare(b.device))
+      .map(queue => `${queue.device}: ${queue.scheduler || "unknown"} ` +
+        `[nr=${queue.nr_requests ?? "?"}, ra=${queue.read_ahead_kb ?? "?"}K, ` +
+        `nomerges=${queue.nomerges ?? "?"}, rotational=${queue.rotational ?? "?"}, ` +
+        `wbt=${queue.wbt_lat_usec ?? "?"}us]`)
+      .join("; ");
+  }},
   {label: "tools / module version", str: true, get: (e, r, c) => r.version},
 ];
 let sortCol = null, sortDir = 1;  // null = matrix order
@@ -1620,15 +1675,21 @@ function syncControls() {
   const mk = (label, title) => el("button", {class: "fbtn", type: "button",
     title: title || ""}, label);
   // presets reset both dimensions
-  [["All", famAll],
-   ["CoW", famAll.filter(f => COW.has(f))],
-   ["Classic", famAll.filter(f => !COW.has(f))],
-  ].forEach(([label, fams]) => {
-    const b = mk(label, "Preset: select these families, both layouts");
+  [["All", famAll, "Preset: select all filesystem families", null],
+   ["Native CoW", famAll.filter(f => NATIVE_COW.has(f)),
+    "Preset: filesystems whose normal overwrite path is copy-on-write", null],
+   ["Reflink", famAll,
+    "Preset: configurations with explicit extent-cloning support",
+    e => hasCapability(e, "reflink")],
+   ["Classic", famAll.filter(f => !NATIVE_COW.has(f)),
+    "Preset: classic in-place filesystem families", null],
+  ].forEach(([label, fams, title, predicate]) => {
+    const b = mk(label, title);
     b.addEventListener("click", () => {
       manual.clear();
       famSel.clear(); fams.forEach(f => famSel.add(f));
       laySel.add("multi"); laySel.add("single");
+      if (predicate) ents.forEach(e => manual.set(e.id, predicate(e)));
       syncControls(); rebuild();
     });
     bar.appendChild(b);
