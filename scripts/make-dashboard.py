@@ -213,10 +213,12 @@ DOCS = {
         "This measures mass unlink and directory-index cleanup. Phase 3.8.",
         [("run-bench.sh (Phase 3.8)", "scripts/run-bench.sh")]),
     "sparse_create_ms": (
-        "ftruncate an empty file to 1GiB + fsync — sparse file creation should be a "
-        "metadata-only operation. Time here, allocated bytes (st_blocks) in the next "
-        "card: together they answer 'is sparse actually sparse'. Community request. "
-        "Phase 3.7.",
+        "After a global sync barrier, ftruncate an empty file to 1GiB + fsync — sparse "
+        "file creation should be a metadata-only operation. Time here, allocated bytes "
+        "(st_blocks) in the next card: together they answer 'is sparse actually sparse'. "
+        "Runs produced before this barrier was added may include deferred cleanup from "
+        "the preceding source-tree phase. The barrier does not wait for asynchronous "
+        "backend maintenance. Community request. Phase 3.7.",
         [("run-bench.sh (Phase 3.7)", "scripts/run-bench.sh")]),
     "sparse_create_bytes": (
         "st_blocks x 512 for the freshly-truncated 1GiB empty file — bytes a supposedly "
