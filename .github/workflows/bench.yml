@@ -134,6 +134,9 @@ jobs:
           name: results-${{ matrix.fs }}-${{ matrix.layout }}
           path: results/
           if-no-files-found: ignore
+          # A failed calibration still uploads diagnostics. Replace that
+          # partial artifact when rerun-slow-runners succeeds for this job.
+          overwrite: true
 
   publish:
     name: Store hosted results

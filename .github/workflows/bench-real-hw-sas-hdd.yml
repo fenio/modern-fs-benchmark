@@ -131,6 +131,7 @@ jobs:
           name: sas-hdd-results-${{ matrix.fs }}-${{ matrix.layout }}
           path: results/
           if-no-files-found: ignore
+          overwrite: true
 
   publish:
     name: Store sas-hdd results
