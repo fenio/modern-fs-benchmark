@@ -6,6 +6,7 @@ Usage: make-dashboard.py --runs <dir> --out <file> [--repo <url>]
                          [--expected-hardware-profile <name>]
                          [--expected-benchmark-scenario <name>]
                          [--history-branch <name>]
+                         [--run-cadence <description>]
 
 <dir> holds one subdirectory per benchmark run, each containing the
 result-<fs>-<layout>.json files produced by run-bench.sh. Files directly in
@@ -552,6 +553,10 @@ def main():
         help="add a link to another benchmark environment",
     )
     ap.add_argument("--history-branch", default="results-data")
+    ap.add_argument(
+        "--run-cadence",
+        help="describe how this dashboard's benchmark runs are triggered",
+    )
     ap.add_argument("--window", type=int, default=100,
                     help="newest runs kept raw; older collapsed to daily medians")
     args = ap.parse_args()
@@ -642,6 +647,7 @@ def main():
         "setupDetails": setup_details,
         "dashboardLinks": dashboard_links,
         "historyBranch": args.history_branch,
+        "runCadence": args.run_cadence,
         "docs": {k: {"text": t, "src": [{"label": l, "url": SRC + p} for l, p in s]}
                  for k, (t, s) in DOCS.items()
                  if k not in OPTIONAL_METRICS or k in available_metrics},
@@ -1784,7 +1790,8 @@ function rebuild() {
   content.appendChild(el("h2", {}, "Trends across runs"));
   if (DATA.runs.length < 2) {
     content.appendChild(el("p", {class: "note"},
-      "Recorded once — trend lines appear as more runs accumulate (2-hourly cron + every push)."));
+      "Recorded once — trend lines appear as more runs accumulate" +
+      (DATA.runCadence ? ` (${DATA.runCadence}).` : ".")));
   } else {
     content.appendChild(el("p", {class: "note"},
       `One card per metric, one point per run — the newest 100 runs individually, older runs collapsed to daily medians (full history on the ${DATA.historyBranch} branch). Drag on a chart to zoom, double-click to reset; the y-axis rescales to what's visible.`));

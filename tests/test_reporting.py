@@ -162,6 +162,8 @@ class DashboardRegressionTests(unittest.TestCase):
                 output,
                 "--repo",
                 "https://example.test/fsbench",
+                "--run-cadence",
+                "6-hourly cron + every push",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -211,6 +213,11 @@ class DashboardRegressionTests(unittest.TestCase):
         self.assertIn("reflink", entities["xfs/zvol"]["capabilities"])
         self.assertNotIn("reflink", entities["ext4/single"]["capabilities"])
         self.assertEqual(data["historyBranch"], "results-data")
+        self.assertEqual(data["runCadence"], "6-hourly cron + every push")
+        self.assertIn(
+            "(DATA.runCadence ? ` (${DATA.runCadence}).` : \".\")",
+            html,
+        )
         self.assertIn(
             "Runs produced before this barrier was added",
             data["docs"]["sparse_create_ms"]["text"],
@@ -359,6 +366,7 @@ class DashboardRegressionTests(unittest.TestCase):
 
         self.assertEqual(legacy.returncode, 0, legacy.stderr)
         self.assertEqual(legacy_data["hardwareProfile"], "farm3")
+        self.assertIsNone(legacy_data["runCadence"])
         self.assertEqual(conflicting.returncode, 1)
         self.assertIn(
             "hardware_profile must be 'farm3', got 'sas-hdd'", conflicting.stderr
@@ -1115,6 +1123,15 @@ class ResultSchemaTests(unittest.TestCase):
         )
         self.assertIn("name: Store hosted results", workflow)
         self.assertNotIn("actions/deploy-pages", workflow)
+
+    def test_only_hosted_dashboard_advertises_six_hour_cadence(self):
+        hosted = BENCH_WORKFLOW.read_text()
+        pages = PAGES_WORKFLOW.read_text()
+
+        self.assertIn("cron: '17 */6 * * *'", hosted)
+        self.assertNotIn("*/2", hosted)
+        self.assertEqual(pages.count("--run-cadence"), 1)
+        self.assertIn("--run-cadence '6-hourly cron + every push'", pages)
 
     def test_hardware_results_use_separate_history_and_dashboard(self):
         hosted = BENCH_WORKFLOW.read_text()

@@ -74,6 +74,7 @@ jobs:
         run: |
           python3 scripts/make-dashboard.py --runs standard-data/runs --out site/index.html \
             --repo "https://github.com/${{ github.repository }}" \
+            --run-cadence '6-hourly cron + every push' \
             --dashboard-link 'Real hardware (farm3)=real-hw/' \
             --dashboard-link 'SAS HDD=sas-hdd/' \
             --dashboard-link 'Hybrid tier v1=sas-hdd/hybrid-tier/' \
