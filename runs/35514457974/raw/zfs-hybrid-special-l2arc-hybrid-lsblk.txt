@@ -1,0 +1,49 @@
+NAME   PATH               SIZE TYPE FSTYPE     MOUNTPOINTS
+sda    /dev/sda  1000204886016 disk            
+|-sda1 /dev/sda1    1023410176 part vfat       /boot/efi
+|-sda2 /dev/sda2  947613859840 part ext4       /
+`-sda3 /dev/sda3   51565821952 part swap       [SWAP]
+sdb    /dev/sdb  1000204886016 disk            
+sdc    /dev/sdc   400088457216 disk            
+|-sdc1 /dev/sdc1   68719476736 part zfs_member 
+`-sdc2 /dev/sdc2    4294967296 part            
+sdd    /dev/sdd   400088457216 disk            
+|-sdd1 /dev/sdd1   68719476736 part zfs_member 
+`-sdd2 /dev/sdd2    4294967296 part            
+sde    /dev/sde   400088457216 disk            
+`-sde1 /dev/sde1   68719476736 part zfs_member 
+sdf    /dev/sdf  6001175126016 disk            
+`-sdf1 /dev/sdf1   17179869184 part bcachefs   
+sdg    /dev/sdg  6001175126016 disk            
+`-sdg1 /dev/sdg1  137438953472 part zfs_member 
+sdh    /dev/sdh  6001175126016 disk            
+`-sdh1 /dev/sdh1  137438953472 part zfs_member 
+sdi    /dev/sdi  6001175126016 disk            
+`-sdi1 /dev/sdi1  137438953472 part zfs_member 
+sdj    /dev/sdj  6001175126016 disk            
+`-sdj1 /dev/sdj1  137438953472 part zfs_member 
+sdk    /dev/sdk  6001175126016 disk            
+`-sdk1 /dev/sdk1  137438953472 part zfs_member 
+sdl    /dev/sdl  6001175126016 disk            
+`-sdl1 /dev/sdl1   17179869184 part bcachefs   
+sdm    /dev/sdm  6001175126016 disk            
+`-sdm1 /dev/sdm1  137438953472 part zfs_member 
+sdn    /dev/sdn  6001175126016 disk            
+`-sdn1 /dev/sdn1   17179869184 part bcachefs   
+sdo    /dev/sdo  6001175126016 disk zfs_member 
+sdp    /dev/sdp  6001175126016 disk zfs_member 
+sdq    /dev/sdq  6001175126016 disk            
+`-sdq1 /dev/sdq1   17179869184 part bcachefs   
+sdr    /dev/sdr  6001175126016 disk zfs_member 
+sds    /dev/sds  6001175126016 disk zfs_member 
+sdt    /dev/sdt  6001175126016 disk            
+`-sdt1 /dev/sdt1  137438953472 part zfs_member 
+sdu    /dev/sdu  6001175126016 disk            
+`-sdu1 /dev/sdu1  137438953472 part zfs_member 
+sdv    /dev/sdv  6001175126016 disk            
+`-sdv1 /dev/sdv1   17179869184 part bcachefs   
+sdw    /dev/sdw  6001175126016 disk            
+`-sdw1 /dev/sdw1   34359738368 part zfs_member 
+sdx    /dev/sdx    30784094208 disk iso9660    
+|-sdx1 /dev/sdx1     998244352 part iso9660    
+`-sdx2 /dev/sdx2       4030464 part vfat       
