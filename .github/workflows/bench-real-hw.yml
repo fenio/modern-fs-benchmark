@@ -43,6 +43,10 @@ jobs:
           - fs: xfs
             layout: lvm-raid10-int
             aging_iters: 8
+          - fs: xfs
+            layout: md-raid5-int
+          - fs: xfs
+            layout: md-raid6-int
           - fs: ext4
             layout: md-raid6
           - fs: btrfs
@@ -105,6 +109,10 @@ jobs:
           }
           sudo "$runner" --capabilities | grep -qx hardware-random-scaling-v2 || {
             echo 'managed benchmark wrapper does not support hardware random scaling' >&2
+            exit 1
+          }
+          sudo "$runner" --capabilities | grep -qx md-integrity-parity-v1 || {
+            echo 'managed benchmark wrapper does not support md-integrity parity' >&2
             exit 1
           }
           sudo "$runner" \

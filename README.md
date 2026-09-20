@@ -47,12 +47,15 @@ project-specific rather than an industry-standard benchmark. It does not use
 reads, while other phases use normal buffered I/O with explicit durability
 barriers where noted.
 
-Every result records the exact tools *and kernel-module* versions tested —
+Every result records the exact tools *and kernel-module* versions tested, plus
+the selected scheduler and core queue settings for each leaf block device —
 essential for ZFS and bcachefs, which are out-of-tree, where the kernel
 version alone doesn't identify what actually ran. Shown in the dashboard
 table, stored in the JSON.
+On hosted runners these are the guest-visible loop/backing-device queues; the
+cloud provider's physical storage scheduler remains outside the VM boundary.
 
-Default matrix — 26 configurations (4 devices, plus baselines; the
+Default matrix — 28 configurations (4 devices, plus baselines; the
 authoritative list is the matrix in `.github/workflows/bench.yml`):
 
 - **ext4 single** — one device, the "what does any of this cost" anchor
@@ -76,10 +79,12 @@ authoritative list is the matrix in `.github/workflows/bench.yml`):
   opaque-blocks falls out of the existing zstd phase
 - **btrfs** — `-d raid1 -m raid1`
 - **Single-parity** — zfs `raidz1`, plus `raidz1-enc` with native encryption
-  on top (community request)
+  on top, and XFS on md RAID5 over one dm-integrity device per member
+  (community request)
 - **Dual-parity (raid6-class)** — zfs `raidz2` (and `raidz2-enc`,
   community request), btrfs `-d raid6 -m raid1c3`
-  (parity metadata is discouraged — write hole), ext4 on md raid6, and
+  (parity metadata is discouraged — write hole), ext4 on md raid6, XFS on
+  md RAID6 over per-member dm-integrity, and
   bcachefs `--erasure_code --replicas=3` (stable since 1.37; write-hole-free
   by design — writes replicate first, background reconcile stripes them)
   (community request, incl. the correction that EC is no longer experimental)
@@ -90,6 +95,11 @@ authoritative list is the matrix in `.github/workflows/bench.yml`):
   checksums give the classic stack detection AND correction: the fairest
   classic-vs-CoW comparison in the corruption phase, with the performance
   tax quantified (community request)
+- **xfs on md raid5/6 + per-member dm-integrity** — CRC32C integrity is below
+  md, so a checksum failure becomes a member read error that parity can
+  reconstruct. These rows use dm-integrity bitmap mode to avoid journal-mode's
+  double writes. Bitmap mode has weaker crash semantics: corruption coincident
+  with a crash in a dirty region may not be detected.
 - **ZFS** — striped mirror pairs (raid10-like), at the default 128K recordsize
   and again at `recordsize=8k` — one-variable proof of how much of ZFS's
   small-random-write cost is configuration, not design
@@ -124,9 +134,9 @@ re-proves it every couple of hours):
   counts provide the strongest evidence of reconstruction. Zero or unavailable
   counts do not prove that the raw overwrite hit the tracked file.
 - **The classic stack *can* buy the same guarantee** — LVM raid with
-  `--raidintegrity y` (dm-integrity) is the first classic layout to pass
-  our corruption phase — but almost nobody runs it, and the performance
-  tax is measurable (that's the `xfs/lvm-raid10-int` row).
+  `--raidintegrity y` and md parity over per-member dm-integrity can identify
+  a bad copy and reconstruct it. The performance tax is measurable in the
+  `xfs/lvm-raid10-int`, `xfs/md-raid5-int`, and `xfs/md-raid6-int` rows.
 
 Speed matters and we measure it honestly. But if you keep data you care
 about — photos, archives, the family's one copy of anything — on a

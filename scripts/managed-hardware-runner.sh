@@ -17,6 +17,7 @@ MANAGED_CALIB_MIN_RAND_IOPS=${MANAGED_CALIB_MIN_RAND_IOPS:-8000}
 
 if [[ $# -eq 1 && $1 == --capabilities ]]; then
   printf '%s\n' hardware-random-scaling-v1 hardware-random-scaling-v2 \
+    md-integrity-parity-v1 \
     "hardware-profile:$MANAGED_BENCHMARK_PROFILE"
   exit 0
 fi
@@ -46,7 +47,8 @@ fi
 case "$configuration" in
   ext4/single | ext4/md-raid10 | ext4/lvm-raid10 | ext4/md-raid6 | \
   ext4/md-raid10-luks | xfs/single | xfs/md-raid10 | xfs/lvm-raid10 | \
-  xfs/zvol | xfs/lvm-raid10-int | btrfs/raid1 | btrfs/raid6 | \
+  xfs/zvol | xfs/lvm-raid10-int | xfs/md-raid5-int | xfs/md-raid6-int | \
+  btrfs/raid1 | btrfs/raid6 | \
   btrfs/single | btrfs/raid1-luks | zfs/mirror | zfs/mirror-8k | \
   zfs/single | zfs/raidz1 | zfs/raidz2 | zfs/raidz1-enc | \
   zfs/raidz2-enc | zfs/mirror-enc | bcachefs/replicas2 | \

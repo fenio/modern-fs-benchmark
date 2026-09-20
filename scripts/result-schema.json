@@ -1,13 +1,30 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "document": {
-    "schema_version": {"type": "integer", "nonnegative": true, "required": false},
+    "schema_version": {"type": "integer", "positive": true, "required": false},
     "fs": {"type": "string", "nonempty": true},
     "layout": {"type": "string", "nonempty": true},
     "kernel": {"type": "string", "nonempty": true},
     "version": {"type": "string"},
     "date": {"type": "string", "nonempty": true},
     "devices": {"type": "string", "nonempty": true},
+    "block_queue": {
+      "type": "array",
+      "nonempty": true,
+      "introduced": 6,
+      "items": {
+        "type": "object",
+        "properties": {
+          "device": {"type": "string", "nonempty": true},
+          "scheduler": {"type": "string", "nonempty": true, "nullable": true},
+          "nr_requests": {"type": "integer", "nonnegative": true, "nullable": true},
+          "read_ahead_kb": {"type": "integer", "nonnegative": true, "nullable": true},
+          "nomerges": {"type": "integer", "nonnegative": true, "nullable": true},
+          "rotational": {"type": "integer", "nonnegative": true, "nullable": true},
+          "wbt_lat_usec": {"type": "integer", "nonnegative": true, "nullable": true}
+        }
+      }
+    },
     "hardware_profile": {"type": "string", "nonempty": true, "required": false},
     "benchmark_revision": {"type": "string", "nonempty": true, "required": false},
     "benchmark_scenario": {"type": "string", "nonempty": true, "required": false},
@@ -32,6 +49,8 @@
     "xfs/lvm-raid10": ["snapshots", "reflink", "degraded", "scrub", "scrub_counts", "snapscale", "enospc"],
     "xfs/zvol": ["snapshots", "compression", "reflink", "degraded", "scrub", "scrub_counts", "enospc"],
     "xfs/lvm-raid10-int": ["snapshots", "reflink", "degraded", "scrub", "scrub_counts", "snapscale", "enospc"],
+    "xfs/md-raid5-int": ["reflink", "degraded", "scrub", "scrub_counts", "enospc"],
+    "xfs/md-raid6-int": ["reflink", "degraded", "scrub", "scrub_counts", "enospc"],
     "ext4/md-raid6": ["degraded", "scrub", "scrub_counts", "enospc"],
     "btrfs/raid1": ["snapshots", "compression", "reflink", "degraded", "scrub", "scrub_counts", "snapscale", "enospc"],
     "btrfs/raid6": ["snapshots", "compression", "reflink", "degraded", "scrub", "scrub_counts", "snapscale", "enospc"],

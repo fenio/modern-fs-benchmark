@@ -71,6 +71,16 @@ fi
 
 setup_benchmark_filesystem() {
 fs_setup
+local -a queue_roots=("${DEVICES[@]}") configured_roots=()
+[[ -z $SPARE_DEV ]] || queue_roots+=("$SPARE_DEV")
+if [ -n "${BENCH_DEVICES:-}" ]; then
+  read -ra configured_roots <<<"$BENCH_DEVICES"
+  queue_roots+=("${configured_roots[@]}")
+fi
+BLOCK_QUEUE_JSON=$(python3 "$SCRIPT_DIR/block-queue-provenance.py" \
+  "${queue_roots[@]}") || die "failed to capture block queue provenance"
+[ "$(jq length <<<"$BLOCK_QUEUE_JSON")" -gt 0 ] \
+  || die "no leaf block queues found for benchmark topology"
 FS_VERSION=$(fs_version 2>/dev/null || true)
 log "$FS ($LAYOUT) mounted at $MNT, data dir $DATA${FS_VERSION:+ [$FS_VERSION]}"
 }
@@ -715,7 +725,7 @@ ENOSPC_RECOVER_OK=null
 
 if [ -z "${BENCH_DEVICES:-}" ]; then
   log "phase: near-full / ENOSPC (fresh 4x${ENOSPC_DEV_SIZE:-2G} $LAYOUT array)"
-  fs_teardown || true
+  fs_teardown || die "failed to tear down the main benchmark filesystem"
   DEVICES=()
   SPARE_DEV=
   for i in 0 1 2 3; do
@@ -800,6 +810,7 @@ jq -n \
   --arg benchmark_scenario "${BENCH_SCENARIO:-}" \
   --arg topology "${BENCH_TOPOLOGY:-}" \
   --argjson ndev "${BENCH_RESULT_NDEV:-${#DEVICES[@]}}" \
+  --argjson block_queue "$BLOCK_QUEUE_JSON" \
   --argjson device_size_bytes "$DEVICE_SIZE_BYTES" \
   --argjson seqwrite_mbps "$SEQWRITE_MBPS" \
   --argjson randwrite_iops "$RANDWRITE_IOPS" \
@@ -869,9 +880,9 @@ jq -n \
   --argjson calib_randwrite_iops "$CALIB_RAND_IOPS" \
   --argjson include_hardware_random_scaling "$include_hardware_random_scaling" \
   --argjson include_device_size "$include_device_size" \
-  '({schema_version: 5,
+  '({schema_version: 6,
     fs: $fs, layout: $layout, kernel: $kernel, version: $version, date: $date,
-    devices: $devices, ndev: $ndev,
+    devices: $devices, ndev: $ndev, block_queue: $block_queue,
     calibration: {seqwrite_mbps: $calib_seqwrite_mbps,
                   randwrite_iops: $calib_randwrite_iops},
     results: ({seqwrite_mbps: $seqwrite_mbps,
@@ -980,13 +991,22 @@ run_benchmark_phases() {
   write_result
 }
 
+cleanup_on_exit() {
+  local status=$?
+  trap - EXIT
+  if ! teardown_devices && ((status == 0)); then
+    status=1
+  fi
+  exit "$status"
+}
+
 main() {
   configure_benchmark "$@"
   require_root
   mkdir -p "$RESULTS_DIR/raw"
   enable_trace
   setup_devices
-  trap teardown_devices EXIT
+  trap cleanup_on_exit EXIT
   run_benchmark_phases
 }
 

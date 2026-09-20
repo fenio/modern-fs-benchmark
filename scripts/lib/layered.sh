@@ -1,8 +1,94 @@
 # shellcheck shell=bash
 # Shared md/LVM layering for classic filesystems (ext4, xfs).
-# Layouts: single | md-raid10 (mdadm) | lvm-raid10 (LVM, CoW snapshots).
+# Layouts include md and LVM RAID, with optional per-member dm-integrity.
 
 VG=fsbench
+INTEGRITY_MAPPINGS=()
+INTEGRITY_ACTIVE=()
+INTEGRITY_SPARE=
+
+layered_integrity_open() {
+  local device=$1 name=$2
+  integritysetup format --batch-mode --no-wipe --integrity crc32c \
+    --tag-size 4 --sector-size 4096 --interleave-sectors 32768 "$device" \
+    || return
+  integritysetup open --integrity crc32c --integrity-bitmap-mode \
+    --integrity-recalculate "$device" "$name" || return
+  INTEGRITY_MAPPINGS+=("/dev/mapper/$name")
+}
+
+layered_integrity_wait() {
+  local mapping i status _start _length _target _mismatches provided position finished
+  for mapping in "${INTEGRITY_MAPPINGS[@]}"; do
+    finished=0
+    for i in $(seq 1 600); do
+      status=$(dmsetup status "${mapping##*/}") || return
+      read -r _start _length _target _mismatches provided position _ <<<"$status"
+      if [[ $position == - ]] \
+        || [[ $provided =~ ^[0-9]+$ && $position =~ ^[0-9]+$ \
+          && $position -ge $provided ]]; then
+        finished=1
+        break
+      fi
+      sleep 1
+    done
+    [[ $finished == 1 ]] \
+      || die "dm-integrity recalculation did not finish for $mapping"
+    wipefs --all --force "$mapping" || return
+  done
+}
+
+layered_md_wait_idle() {
+  local status=0 md action degraded
+  mdadm --wait /dev/md/fsbench >&2 || status=$?
+  ((status <= 1)) || return "$status"
+  md=$(readlink -f /dev/md/fsbench) || return
+  md=${md##*/}
+  action=$(cat "/sys/block/$md/md/sync_action") || return
+  degraded=$(cat "/sys/block/$md/md/degraded") || return
+  [[ $action == idle && $degraded == 0 ]]
+}
+
+layered_make_integrity_md() {
+  local level=${LAYOUT#md-raid} i mapping
+  level=${level%%-*}
+  modprobe dm_integrity || return
+  ((${#INTEGRITY_MAPPINGS[@]} == 0)) \
+    || die "integrity mappings from an earlier setup are still active"
+  INTEGRITY_MAPPINGS=()
+  INTEGRITY_ACTIVE=()
+  INTEGRITY_SPARE=
+  for i in "${!DEVICES[@]}"; do
+    layered_integrity_open "${DEVICES[i]}" "fsbench-int$i" || return
+    INTEGRITY_ACTIVE+=("/dev/mapper/fsbench-int$i")
+  done
+  if [[ -n $SPARE_DEV ]]; then
+    layered_integrity_open "$SPARE_DEV" fsbench-int-spare || return
+    INTEGRITY_SPARE=/dev/mapper/fsbench-int-spare
+  fi
+  udevadm settle || return
+  layered_integrity_wait || return
+
+  local md_args=(--create /dev/md/fsbench --run --metadata=1.2
+    --level="$level" --layout=left-symmetric --chunk=512K
+    --raid-devices="${#INTEGRITY_ACTIVE[@]}")
+  [[ -n ${BENCH_DEVICES:-} ]] || md_args+=(--assume-clean)
+  mdadm "${md_args[@]}" "${INTEGRITY_ACTIVE[@]}" || return
+  if [[ -n ${BENCH_DEVICES:-} ]]; then
+    layered_md_wait_idle || return
+  fi
+  LAYERED_DEV=/dev/md/fsbench
+}
+
+layered_integrity_mismatches() {
+  local mapping count total=0
+  for mapping in "${INTEGRITY_ACTIVE[@]}"; do
+    count=$(dmsetup status "${mapping##*/}" | awk '{print $4}')
+    [[ $count =~ ^[0-9]+$ ]] || return 1
+    total=$((total + count))
+  done
+  echo "$total"
+}
 
 # Assemble the block device for the current LAYOUT and set LAYERED_DEV.
 # Must run in the caller's shell, NOT in a $(…) subshell: the lvm layout
@@ -11,6 +97,9 @@ layered_make_dev() {
   case "${LAYOUT:-single}" in
     single)
       LAYERED_DEV=${DEVICES[0]}
+      ;;
+    md-raid5-int | md-raid6-int)
+      layered_make_integrity_md
       ;;
     md-*)
       # level from the layout name (md-raid10 -> 10, md-raid6 -> 6);
@@ -128,6 +217,15 @@ layered_free_bytes() {
 
 layered_degrade() {
   case "${LAYOUT:-single}" in
+    md-raid5-int | md-raid6-int)
+      local failed=${INTEGRITY_ACTIVE[1]} active=() mapping
+      mdadm --fail /dev/md/fsbench "$failed" || return
+      mdadm --remove /dev/md/fsbench "$failed" || return
+      for mapping in "${INTEGRITY_ACTIVE[@]}"; do
+        [[ $mapping == "$failed" ]] || active+=("$mapping")
+      done
+      INTEGRITY_ACTIVE=("${active[@]}")
+      ;;
     md-*)
       mdadm --fail /dev/md/fsbench "${DEVICES[1]}"
       mdadm --remove /dev/md/fsbench "${DEVICES[1]}"
@@ -153,6 +251,12 @@ layered_degrade() {
 
 layered_rebuild() {
   case "${LAYOUT:-single}" in
+    md-raid5-int | md-raid6-int)
+      [[ -n $INTEGRITY_SPARE ]] || return 1
+      mdadm --add /dev/md/fsbench "$INTEGRITY_SPARE" || return
+      layered_md_wait_idle || return
+      INTEGRITY_ACTIVE+=("$INTEGRITY_SPARE")
+      ;;
     md-*)
       mdadm --add /dev/md/fsbench "$SPARE_DEV"
       mdadm --wait /dev/md/fsbench || true
@@ -188,6 +292,19 @@ layered_rebuild_lvm_cleanup() {
 # right — repaired is always 0, and reads may serve the corrupted copy.
 layered_scrub() {
   case "${LAYOUT:-single}" in
+    md-raid5-int | md-raid6-int)
+      local before after degraded md
+      before=$(layered_integrity_mismatches) || return 1
+      md=$(readlink -f /dev/md/fsbench)
+      md=${md##*/}
+      echo check >"/sys/block/$md/md/sync_action" || return
+      layered_md_wait_idle || return
+      degraded=$(cat "/sys/block/$md/md/degraded")
+      [[ $degraded == 0 ]] || return 1
+      after=$(layered_integrity_mismatches) || return 1
+      [[ $after -ge $before ]] || return 1
+      echo "$((after - before)) $((after - before))"
+      ;;
     md-*)
       local md
       md=$(readlink -f /dev/md/fsbench)
@@ -213,6 +330,44 @@ layered_scrub() {
 layered_teardown() {
   umount "$MNT" 2>/dev/null || true
   case "${LAYOUT:-single}" in
+    md-raid5-int | md-raid6-int)
+      local failed=0 remaining=()
+      if [[ -e /dev/md/fsbench ]]; then
+        for _ in 1 2 3; do
+          mdadm --stop /dev/md/fsbench 2>/dev/null && break
+          sleep 1
+        done
+        udevadm settle 2>/dev/null || true
+        if [[ -e /dev/md/fsbench ]]; then
+          log "WARNING: failed to stop /dev/md/fsbench"
+          return 1
+        fi
+      fi
+      if ((${#INTEGRITY_MAPPINGS[@]})); then
+        mdadm --zero-superblock "${INTEGRITY_MAPPINGS[@]}" 2>/dev/null || true
+      fi
+      local i mapping
+      for ((i = ${#INTEGRITY_MAPPINGS[@]} - 1; i >= 0; i--)); do
+        mapping=${INTEGRITY_MAPPINGS[i]}
+        [[ -e $mapping ]] || continue
+        for _ in 1 2 3; do
+          integritysetup close "${mapping##*/}" 2>/dev/null && break
+          sleep 1
+        done
+        udevadm settle 2>/dev/null || true
+        if [[ -e $mapping ]]; then
+          failed=1
+          remaining+=("$mapping")
+        fi
+      done
+      INTEGRITY_MAPPINGS=("${remaining[@]}")
+      if ((failed)) || ((${#INTEGRITY_MAPPINGS[@]})); then
+        log "WARNING: failed to close all integrity mappings"
+        return 1
+      fi
+      INTEGRITY_ACTIVE=()
+      INTEGRITY_SPARE=
+      ;;
     md-*)
       mdadm --stop /dev/md/fsbench 2>/dev/null || true
       mdadm --zero-superblock "${DEVICES[@]}" 2>/dev/null || true

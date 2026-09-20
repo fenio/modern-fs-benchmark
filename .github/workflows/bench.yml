@@ -51,6 +51,10 @@ jobs:
           - fs: xfs
             layout: lvm-raid10-int
             aging_iters: 8
+          - fs: xfs
+            layout: md-raid5-int
+          - fs: xfs
+            layout: md-raid6-int
           - fs: ext4
             layout: md-raid6
           - fs: btrfs

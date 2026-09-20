@@ -13,7 +13,7 @@ case "$FS" in
     ;;
   xfs)
     # zfsutils for the zvol layout (XFS on a ZFS zvol)
-    apt-get install -yqq fio jq xfsprogs mdadm lvm2 zfsutils-linux
+    apt-get install -yqq fio jq xfsprogs mdadm lvm2 cryptsetup zfsutils-linux
     ;;
   btrfs)
     apt-get install -yqq fio jq btrfs-progs btrfs-compsize

@@ -59,10 +59,10 @@ fs_setup() {
     DATA="$MNT/data"
     return 0
   fi
-  layered_make_dev
-  mkfs.xfs -fq "$LAYERED_DEV"
-  mount -t xfs -o noatime "$LAYERED_DEV" "$MNT"
-  mkdir -p "$MNT/data"
+  layered_make_dev || return
+  mkfs.xfs -fq "$LAYERED_DEV" || return
+  mount -t xfs -o noatime "$LAYERED_DEV" "$MNT" || return
+  mkdir -p "$MNT/data" || return
   # shellcheck disable=SC2034  # consumed by run-bench.sh
   DATA="$MNT/data"
 }

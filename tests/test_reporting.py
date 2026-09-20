@@ -18,6 +18,7 @@ DASHBOARD = ROOT / "scripts" / "make-dashboard.py"
 AUDIT = ROOT / "scripts" / "audit-results.py"
 SCHEMA = ROOT / "scripts" / "result-schema.json"
 VALIDATOR = ROOT / "scripts" / "validate-result.py"
+BLOCK_QUEUE_PROVENANCE = ROOT / "scripts" / "block-queue-provenance.py"
 RUN_BENCH = ROOT / "scripts" / "run-bench.sh"
 SUMMARIZE = ROOT / "scripts" / "summarize.sh"
 MANAGED_HARDWARE_RUNNER = ROOT / "scripts" / "managed-hardware-runner.sh"
@@ -206,6 +207,9 @@ class DashboardRegressionTests(unittest.TestCase):
         self.assertIsNone(data["hardwareProfile"])
         self.assertIsNone(data["benchmarkScenario"])
         self.assertEqual(data["setupDetails"], [])
+        entities = {entity["id"]: entity for entity in data["entities"]}
+        self.assertIn("reflink", entities["xfs/zvol"]["capabilities"])
+        self.assertNotIn("reflink", entities["ext4/single"]["capabilities"])
         self.assertEqual(data["historyBranch"], "results-data")
         self.assertIn(
             "Runs produced before this barrier was added",
@@ -226,6 +230,8 @@ class DashboardRegressionTests(unittest.TestCase):
         self.assertIn("This does not certify the whole filesystem", html)
         self.assertIn('label: "Corruption probe"', html)
         self.assertIn('["SURVIVED", "pass"', html)
+        self.assertIn('["Native CoW"', html)
+        self.assertIn('["Reflink"', html)
         self.assertIn('["UNPROVEN", "lucky"', html)
         self.assertIn("content.appendChild(buildScoreSummary(view));", html)
         self.assertIn("select a score", html)
@@ -529,7 +535,16 @@ class AuditRegressionTests(unittest.TestCase):
             result_file = runs / "101" / "result-zfs-mirror.json"
             shutil.copy2(runs / "100" / result_file.name, result_file)
             document = json.loads(result_file.read_text())
-            document["schema_version"] = 5
+            document["schema_version"] = 6
+            document["block_queue"] = [{
+                "device": "/dev/loop0",
+                "scheduler": "none",
+                "nr_requests": 128,
+                "read_ahead_kb": 128,
+                "nomerges": 0,
+                "rotational": 0,
+                "wbt_lat_usec": 2000,
+            }]
             result_file.write_text(json.dumps(document))
 
             result = run_audit(runs)
@@ -737,7 +752,7 @@ class ResultSchemaTests(unittest.TestCase):
         schema = json.loads(SCHEMA.read_text())
         metrics = schema["metrics"]
 
-        self.assertEqual(schema["schema_version"], 5)
+        self.assertEqual(schema["schema_version"], 6)
         self.assertEqual(
             [
                 (metric["key"], metric["label"], metric["unit"], metric["better"])
@@ -764,6 +779,77 @@ class ResultSchemaTests(unittest.TestCase):
         for key, _label, _unit, _better in HARDWARE_METRIC_CONTRACT:
             self.assertNotIn(key, score_model)
 
+    def test_block_queue_provenance_resolves_stacked_devices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sysfs = root / "class" / "block"
+            devices = root / "devices"
+            sysfs.mkdir(parents=True)
+
+            for name, scheduler, rotational in (
+                ("sda", "none [mq-deadline] kyber", 1),
+                ("sdb", "[none] mq-deadline", 0),
+            ):
+                disk = devices / name
+                partition = disk / f"{name}1"
+                queue = disk / "queue"
+                partition.mkdir(parents=True)
+                queue.mkdir()
+                (disk / "dev").write_text(f"8:{0 if name == 'sda' else 16}\n")
+                (partition / "partition").write_text("1\n")
+                (queue / "scheduler").write_text(scheduler + "\n")
+                (queue / "nr_requests").write_text("128\n")
+                (queue / "read_ahead_kb").write_text("256\n")
+                (queue / "nomerges").write_text("0\n")
+                (queue / "rotational").write_text(f"{rotational}\n")
+                if name == "sda":
+                    (queue / "wbt_lat_usec").write_text("75000\n")
+                (sysfs / name).symlink_to(disk, target_is_directory=True)
+                (sysfs / f"{name}1").symlink_to(
+                    partition, target_is_directory=True
+                )
+
+            dm = devices / "dm-0"
+            slaves = dm / "slaves"
+            slaves.mkdir(parents=True)
+            (dm / "dev").write_text("253:0\n")
+            (slaves / "sda1").symlink_to(sysfs / "sda1")
+            (slaves / "sdb1").symlink_to(sysfs / "sdb1")
+            (sysfs / "dm-0").symlink_to(dm, target_is_directory=True)
+
+            result = run_script(
+                BLOCK_QUEUE_PROVENANCE,
+                "--sysfs-root",
+                sysfs,
+                "/dev/dm-0",
+                "/dev/sda1",
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout),
+            [
+                {
+                    "device": "/dev/sda",
+                    "scheduler": "mq-deadline",
+                    "nr_requests": 128,
+                    "read_ahead_kb": 256,
+                    "nomerges": 0,
+                    "rotational": 1,
+                    "wbt_lat_usec": 75000,
+                },
+                {
+                    "device": "/dev/sdb",
+                    "scheduler": "none",
+                    "nr_requests": 128,
+                    "read_ahead_kb": 256,
+                    "nomerges": 0,
+                    "rotational": 0,
+                    "wbt_lat_usec": None,
+                },
+            ],
+        )
+
     def test_scenario_and_topology_are_optional_nonempty_strings(self):
         schema = json.loads(SCHEMA.read_text())
 
@@ -777,6 +863,31 @@ class ResultSchemaTests(unittest.TestCase):
             FIXTURE_RUNS / "101" / "result-btrfs-raid1.json",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_schema_v6_requires_block_queue_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result_file = Path(tmp) / "result.json"
+            document = json.loads(
+                (FIXTURE_RUNS / "101" / "result-btrfs-raid1.json").read_text()
+            )
+            document["schema_version"] = 6
+            result_file.write_text(json.dumps(document))
+
+            result = run_script(VALIDATOR, result_file)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("document: missing keys: block_queue", result.stderr)
+
+    def test_schema_version_zero_cannot_bypass_required_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result_file = Path(tmp) / "result.json"
+            result_file.write_text('{"schema_version": 0}')
+
+            result = run_script(VALIDATOR, result_file)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("schema_version: must be positive", result.stderr)
+        self.assertIn("document: missing keys:", result.stderr)
 
     def test_configurations_match_benchmark_matrix(self):
         schema = json.loads(SCHEMA.read_text())
@@ -1211,6 +1322,12 @@ class ResultSchemaTests(unittest.TestCase):
 
         self.assertLess(write_result, validate_result)
         self.assertLess(validate_result, report_success)
+
+    def test_cleanup_failure_makes_successful_benchmark_fail(self):
+        source = RUN_BENCH.read_text()
+
+        self.assertIn("if ! teardown_devices && ((status == 0)); then", source)
+        self.assertIn("trap cleanup_on_exit EXIT", source)
 
     def test_benchmark_emits_current_schema_version(self):
         schema_version = json.loads(SCHEMA.read_text())["schema_version"]
@@ -1979,7 +2096,7 @@ fi
         hardware = matrix_profile(HARDWARE_BENCH_WORKFLOW)
         sas_hdd = matrix_profile(SAS_HDD_BENCH_WORKFLOW)
 
-        self.assertEqual(len(hosted), 26)
+        self.assertEqual(len(hosted), 28)
         self.assertEqual(hardware, hosted)
         self.assertEqual(sas_hdd, hosted)
 
@@ -2034,6 +2151,45 @@ fi
             layered.index("udevadm settle"),
             layered.index('dmsetup remove --retry "${d##*/}"'),
         )
+
+    def test_md_integrity_parity_wraps_each_member_below_md(self):
+        layered = (ROOT / "scripts" / "lib" / "layered.sh").read_text()
+        schema = json.loads(SCHEMA.read_text())
+
+        for layout in ("md-raid5-int", "md-raid6-int"):
+            self.assertIn(f'"xfs/{layout}"', SCHEMA.read_text())
+            self.assertIn(f'layout: {layout}', BENCH_WORKFLOW.read_text())
+            self.assertIn(f"xfs/{layout}", schema["configurations"])
+        self.assertIn("--integrity-bitmap-mode", layered)
+        self.assertIn("--integrity-recalculate", layered)
+        self.assertIn("--integrity crc32c", layered)
+        self.assertIn('INTEGRITY_ACTIVE+=("/dev/mapper/fsbench-int$i")', layered)
+        self.assertIn('mdadm "${md_args[@]}" "${INTEGRITY_ACTIVE[@]}"', layered)
+        self.assertNotIn("--integrity-no-journal", layered)
+        self.assertIn("md-integrity-parity-v1", MANAGED_HARDWARE_RUNNER.read_text())
+
+    def test_dm_integrity_recalculation_accepts_terminal_numeric_position(self):
+        layered = ROOT / "scripts" / "lib" / "layered.sh"
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'''
+set -euo pipefail
+source "{layered}"
+INTEGRITY_MAPPINGS=(/dev/mapper/fsbench-int0)
+dmsetup() {{ printf '0 2048 integrity 0 2048 2048 B 1 recalculate\n'; }}
+wipefs() {{ :; }}
+sleep() {{ :; }}
+die() {{ printf '%s\n' "$*" >&2; return 1; }}
+layered_integrity_wait
+''',
+            ],
+            text=True,
+            capture_output=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":
