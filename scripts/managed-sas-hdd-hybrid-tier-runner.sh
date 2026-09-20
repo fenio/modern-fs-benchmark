@@ -17,10 +17,16 @@ readonly META_SIZE_BYTES=4294967296
 readonly READ_CACHE_SIZE_BYTES=68719476736
 MANAGED_RESULTS_ROOT=${MANAGED_RESULTS_ROOT:-/var/lib/modern-fs-benchmark/results}
 
+case "$MANAGED_BENCHMARK_SCENARIO" in
+  hybrid-tier-v1) topology_capability=hybrid-tier-topology-v1 ;;
+  hybrid-tier-v2) topology_capability=hybrid-tier-topology-v2 ;;
+  *) echo "unsupported benchmark scenario: $MANAGED_BENCHMARK_SCENARIO" >&2; exit 2 ;;
+esac
+
 if [[ $# -eq 1 && $1 == --capabilities ]]; then
   printf '%s\n' "hardware-profile:$MANAGED_BENCHMARK_PROFILE" \
     "benchmark-scenario:$MANAGED_BENCHMARK_SCENARIO" \
-    hybrid-tier-topology-v1 hardware-random-scaling-v2
+    "$topology_capability" hardware-random-scaling-v2
   exit 0
 fi
 
@@ -70,10 +76,11 @@ for device in "${hot[@]}"; do require_size "$device" "$HOT_SIZE_BYTES"; done
 for device in "${meta[@]}"; do require_size "$device" "$META_SIZE_BYTES"; done
 require_size "$MANAGED_HYBRID_READ_CACHE_DEVICE" "$READ_CACHE_SIZE_BYTES"
 
-case "$fs" in
-  btrfs) layout=hybrid-dmcache ;;
-  zfs) layout=hybrid-special-l2arc ;;
-  bcachefs) layout=hybrid-native ;;
+case "$MANAGED_BENCHMARK_SCENARIO/$fs" in
+  hybrid-tier-v1/btrfs | hybrid-tier-v2/btrfs) layout=hybrid-dmcache ;;
+  hybrid-tier-v1/zfs | hybrid-tier-v2/zfs) layout=hybrid-special-l2arc ;;
+  hybrid-tier-v1/bcachefs) layout=hybrid-native ;;
+  hybrid-tier-v2/bcachefs) layout=hybrid-native-3ssd ;;
 esac
 results_dir="$MANAGED_RESULTS_ROOT/$run_id-$attempt/$fs-$layout"
 install -d -m 0755 "$MANAGED_RESULTS_ROOT"

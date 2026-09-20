@@ -56,6 +56,11 @@
       "btrfs/hybrid-dmcache": ["snapshots", "compression", "reflink", "snapscale"],
       "zfs/hybrid-special-l2arc": ["snapshots", "compression", "reflink", "snapscale"],
       "bcachefs/hybrid-native": ["snapshots", "compression", "reflink", "snapscale"]
+    },
+    "hybrid-tier-v2": {
+      "btrfs/hybrid-dmcache": ["snapshots", "compression", "reflink", "snapscale"],
+      "zfs/hybrid-special-l2arc": ["snapshots", "compression", "reflink", "snapscale"],
+      "bcachefs/hybrid-native-3ssd": ["snapshots", "compression", "reflink", "snapscale"]
     }
   },
   "metrics": [

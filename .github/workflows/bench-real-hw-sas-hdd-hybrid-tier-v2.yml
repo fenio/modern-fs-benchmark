@@ -1,0 +1,163 @@
+name: fs-bench-real-hw-sas-hdd-hybrid-tier-v2
+
+on:
+  schedule:
+    - cron: '47 4 * * 3'
+  workflow_dispatch:
+
+concurrency:
+  group: fs-bench-sas-hdd-storage
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_SAS_HDD_HYBRID_TIER_V2_BENCHMARKS == 'true'
+    runs-on: [self-hosted, linux, x64, fs-benchmark-sas-hdd]
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - fs: btrfs
+            layout: hybrid-dmcache
+          - fs: zfs
+            layout: hybrid-special-l2arc
+          - fs: bcachefs
+            layout: hybrid-native-3ssd
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run hybrid tier v2 benchmark through managed wrapper
+        run: |
+          runner=$(command -v modern-fs-benchmark-hybrid-tier-v2-run) || {
+            echo 'managed hybrid-tier-v2 benchmark wrapper is not installed' >&2
+            exit 1
+          }
+          sudo "$runner" --revision "${{ github.sha }}" --capabilities \
+            | grep -qx benchmark-scenario:hybrid-tier-v2 || {
+            echo 'managed wrapper is not assigned to hybrid-tier-v2' >&2
+            exit 1
+          }
+          sudo "$runner" --revision "${{ github.sha }}" \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "${{ matrix.fs }}"
+          mkdir -p results
+          cp -a "/var/lib/modern-fs-benchmark/results/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/${{ matrix.fs }}-${{ matrix.layout }}/." results/
+
+      - name: Write job summary
+        if: always()
+        run: scripts/summarize.sh results/result-*.json >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sas-hdd-hybrid-tier-v2-results-${{ matrix.fs }}
+          path: results/
+          if-no-files-found: ignore
+          overwrite: true
+
+  publish:
+    name: Store hybrid-tier-v2 results
+    needs: bench
+    if: ${{ needs.bench.result == 'success' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    concurrency:
+      group: results-real-hw-sas-hdd-hybrid-tier-v2
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: sas-hdd-hybrid-tier-v2-results-*
+          path: incoming
+          merge-multiple: true
+
+      - name: Verify cleanup and complete result set
+        run: |
+          test -f incoming/hybrid-v2-cleanup-btrfs-complete
+          test -f incoming/hybrid-v2-cleanup-zfs-complete
+          test -f incoming/hybrid-v2-cleanup-bcachefs-complete
+          python3 scripts/validate-result.py --complete-set \
+            --expected-hardware-profile sas-hdd \
+            --expected-benchmark-scenario hybrid-tier-v2 \
+            --expected-configuration btrfs/hybrid-dmcache \
+            --expected-configuration zfs/hybrid-special-l2arc \
+            --expected-configuration bcachefs/hybrid-native-3ssd \
+            incoming/result-*.json
+
+      - name: Verify hardware provenance
+        run: |
+          jq -e -s --arg expected_revision "${{ github.sha }}" \
+            --arg expected_btrfs_devices \
+              '/dev/disk/by-id/wwn-0x5000c50094425a2b-part1 /dev/disk/by-id/wwn-0x5000c50094420143-part1 /dev/disk/by-id/wwn-0x5000c500944224af-part1 /dev/disk/by-id/wwn-0x5000c50094420323-part1 /dev/disk/by-id/wwn-0x5000c5009442212f-part1 /dev/disk/by-id/wwn-0x5000c5009442640f-part1 /dev/disk/by-id/wwn-0x5000c500944259f7-part1 /dev/disk/by-id/wwn-0x5000c50094422a7f-part1 /dev/disk/by-id/wwn-0x5000cca04ec26e38-part1 /dev/disk/by-id/wwn-0x5000cca04ec25d84-part1 /dev/disk/by-id/wwn-0x5000cca04ec26e38-part2 /dev/disk/by-id/wwn-0x5000cca04ec25d84-part2' \
+            --arg expected_tier_devices \
+              '/dev/disk/by-id/wwn-0x5000c50094425a2b-part1 /dev/disk/by-id/wwn-0x5000c50094420143-part1 /dev/disk/by-id/wwn-0x5000c500944224af-part1 /dev/disk/by-id/wwn-0x5000c50094420323-part1 /dev/disk/by-id/wwn-0x5000c5009442212f-part1 /dev/disk/by-id/wwn-0x5000c5009442640f-part1 /dev/disk/by-id/wwn-0x5000c500944259f7-part1 /dev/disk/by-id/wwn-0x5000c50094422a7f-part1 /dev/disk/by-id/wwn-0x5000cca04ec26e38-part1 /dev/disk/by-id/wwn-0x5000cca04ec25d84-part1 /dev/disk/by-id/wwn-0x5000cca04ec25e3c-part1' \
+            'all(.[];
+              .hardware_profile == "sas-hdd" and
+              .benchmark_scenario == "hybrid-tier-v2" and
+              .benchmark_revision == $expected_revision and
+              ((.fs == "btrfs" and .ndev == 12 and
+                .devices == $expected_btrfs_devices and
+                .layout == "hybrid-dmcache" and
+                .topology == "mdraid10-dmcache-writeback") or
+               (.fs == "zfs" and .ndev == 11 and
+                .devices == $expected_tier_devices and
+                .layout == "hybrid-special-l2arc" and
+                .topology == "mirrors-special-metadata-l2arc") or
+               (.fs == "bcachefs" and .ndev == 11 and
+                .devices == $expected_tier_devices and
+                .layout == "hybrid-native-3ssd" and
+                .topology == "native-three-ssd-writeback")))' \
+             incoming/result-*.json >/dev/null
+
+      - name: Verify bcachefs promotion evidence
+        run: |
+          prefix=incoming/raw/bcachefs-hybrid-native-3ssd-hybrid-v2
+          test -s "$prefix-reconcile-status.txt"
+          test -s "$prefix-counters.txt"
+          test -s "$prefix-promotion.txt"
+          grep -q '^=== time_stats/data_promote ===$' "$prefix-promotion.txt"
+          awk '
+            $0 == "=== options/promote_whole_extents ===" {
+              getline
+              found = ($0 == "0")
+            }
+            END { exit !found }
+          ' "$prefix-promotion.txt"
+
+      - name: Append results to hybrid-tier-v2 history branch
+        run: |
+          branch=results-real-hw-sas-hdd-hybrid-tier-v2
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set +e
+          git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch origin "$branch"
+            git worktree add hybrid-v2-data "origin/$branch"
+            git -C hybrid-v2-data checkout -B "$branch"
+          elif [ "$status" -eq 2 ]; then
+            git worktree add --detach hybrid-v2-data
+            git -C hybrid-v2-data checkout --orphan "$branch"
+            git -C hybrid-v2-data rm -rf --quiet . || true
+          else
+            echo "failed to query $branch (git exit $status)" >&2
+            exit "$status"
+          fi
+          run_dir="hybrid-v2-data/runs/${{ github.run_id }}"
+          mkdir -p "$run_dir/raw"
+          cp incoming/result-*.json "$run_dir/"
+          cp incoming/raw/*.txt "$run_dir/raw/"
+          cp LICENSE-DATA hybrid-v2-data/LICENSE
+          git -C hybrid-v2-data add LICENSE runs
+          git -C hybrid-v2-data commit -m "hybrid-tier-v2 results from run ${{ github.run_id }}" || echo "nothing new"
+          git -C hybrid-v2-data push origin "$branch"

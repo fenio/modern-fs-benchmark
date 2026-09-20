@@ -66,6 +66,25 @@ hybrid_assert_zpool_owned() {
   (( found == 1 )) || die "$HYBRID_ZPOOL has no verifiable scenario members"
 }
 
+hybrid_assert_no_imported_zpool_members() {
+  local pools pool status member
+  if ! pools=$(zpool list -H -o name 2>/dev/null); then
+    [[ ! -d /sys/module/zfs ]] && return 0
+    die "cannot enumerate imported ZFS pools"
+  fi
+  while read -r pool; do
+    [[ -n $pool ]] || continue
+    status=$(zpool status -LP "$pool") \
+      || die "cannot inspect imported ZFS pool $pool"
+    while read -r member; do
+      [[ -n $member ]] || continue
+      if hybrid_role_contains "$member"; then
+        die "$member is still owned by imported ZFS pool $pool"
+      fi
+    done < <(awk '$1 ~ /^\// {print $1}' <<<"$status")
+  done <<<"$pools"
+}
+
 hybrid_assert_mounts_owned() {
   local source fstype target member resolved expected mount_table
   mount_table=$(findmnt -rn -o TARGET,SOURCE,FSTYPE) \
@@ -215,6 +234,7 @@ hybrid_preflight_and_wipe() {
       die "$device has an unexplained block-device holder"
     fi
   done
+  hybrid_assert_no_imported_zpool_members
   for device in "${HYBRID_ALL_DEVICES[@]}"; do
     wipefs --all --force "$device"
   done

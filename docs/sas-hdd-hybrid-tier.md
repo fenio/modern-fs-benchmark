@@ -5,6 +5,10 @@ with three fast SSDs. It fixes the physical budget and workload, not the
 internal mechanism: bcachefs has native allocation targets, ZFS has allocation
 classes and L2ARC, and Btrfs requires a block-layer cache.
 
+The follow-up [`hybrid-tier-v2`](sas-hdd-hybrid-tier-v2.md) preserves this
+scenario and its results while testing all three SSDs as one durable bcachefs
+foreground, metadata, and promotion target. Btrfs and ZFS are unchanged controls.
+
 The scenario is independent from the 26-case `sas-hdd` baseline:
 
 - Workflow: `.github/workflows/bench-real-hw-sas-hdd-hybrid-tier.yml`
