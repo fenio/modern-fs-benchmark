@@ -1,0 +1,23 @@
+Scan pending:     0
+                   data  metadata  
+  replicas:           0         0  
+  checksum:           0         0  
+  erasure_code:       0         0  
+  compression:        0         0  
+  target:         8.14G         0  
+  high_priority:      0         0  
+  pending:            0         0  
+  stripes:            0         0  
+
+
+processing normal normal: 500%, done 5/1 nodes, at reconcile_work:6052837899185946624:19617832:4294966730
+
+Reconcile thread backtrace:
+  [<0>] bch2_move_ratelimit+0x3a6/0x5c0 [bcachefs]
+  [<0>] do_reconcile_phase_iter+0x5c/0x4f0 [bcachefs]
+  [<0>] do_reconcile+0x960/0x1080 [bcachefs]
+  [<0>] bch2_reconcile_thread+0xfc/0x130 [bcachefs]
+  [<0>] kthread+0xe3/0x120
+  [<0>] ret_from_fork+0x2b2/0x340
+  [<0>] ret_from_fork_asm+0x1a/0x30
+

@@ -1,0 +1,29 @@
+Filesystem: b9126ce4-9748-4c34-97e5-d76c76f74990
+Size:             1190946700288  
+Used:              108187164672  
+Online reserved:              0  
+
+
+       undegraded  
+2x:  108187164672  
+
+cached:  53818100224  
+
+
+Pending reconcile:      data  metadata  
+target:             20971520         0  
+
+
+Device label           Device  State          Size         Used  Use%  Leaving  
+hdd.disk0 (device 0):  sdg1    rw     136362061824  13454917632    9%  
+hdd.disk1 (device 1):  sdh1    rw     136362061824  13454917632    9%  
+hdd.disk2 (device 2):  sdi1    rw     136362061824  13455331328    9%  
+hdd.disk3 (device 3):  sdj1    rw     136362061824  13454278656    9%  
+hdd.disk4 (device 4):  sdk1    rw     136362061824  13455106048    9%  
+hdd.disk5 (device 5):  sdm1    rw     136362061824  13454053376    9%  
+hdd.disk6 (device 6):  sdt1    rw     136362061824  13453950976    9%  
+hdd.disk7 (device 7):  sdu1    rw     136362061824  13453950976    9%  
+hot.ssd0 (device 8):   sdc1    rw      68179456000  18135553536   27%  3313664  
+hot.ssd1 (device 9):   sdd1    rw      68179456000  18114156032   27%  4366336  
+hot.ssd2 (device 10):  sde1    rw      68179456000  18116008960   27%  3485696  
+

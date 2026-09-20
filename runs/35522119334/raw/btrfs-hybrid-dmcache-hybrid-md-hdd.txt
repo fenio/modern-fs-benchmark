@@ -1,0 +1,35 @@
+/dev/md/fsbench-hybrid-v2-hdd:
+           Version : 1.2
+     Creation Time : Sun Sep 20 18:15:14 2026
+        Raid Level : raid10
+        Array Size : 536342528 (511.50 GiB 549.21 GB)
+     Used Dev Size : 134085632 (127.87 GiB 137.30 GB)
+      Raid Devices : 8
+     Total Devices : 8
+       Persistence : Superblock is persistent
+
+       Update Time : Sun Sep 20 18:44:30 2026
+             State : clean 
+    Active Devices : 8
+   Working Devices : 8
+    Failed Devices : 0
+     Spare Devices : 0
+
+            Layout : near=2
+        Chunk Size : 512K
+
+Consistency Policy : resync
+
+              Name : fsbench-hybrid-v2-hdd
+              UUID : 2c638ab8:2256b3cd:8ee5ff67:a70bfd73
+            Events : 1
+
+    Number   Major   Minor   RaidDevice State
+       0       8       97        0      active sync set-A   /dev/sdg1
+       1       8      113        1      active sync set-B   /dev/sdh1
+       2       8      129        2      active sync set-A   /dev/sdi1
+       3       8      145        3      active sync set-B   /dev/sdj1
+       4       8      161        4      active sync set-A   /dev/sdk1
+       5       8      193        5      active sync set-B   /dev/sdm1
+       6      65       49        6      active sync set-A   /dev/sdt1
+       7      65       65        7      active sync set-B   /dev/sdu1
