@@ -30,7 +30,9 @@ represent.
 The first such design is documented in
 [`sas-hdd-hybrid-tier.md`](sas-hdd-hybrid-tier.md). It compares a layered
 Btrfs cache, ZFS special/L2ARC classes, and native bcachefs targets under one
-fixed eight-HDD/three-SSD physical budget.
+fixed eight-HDD/three-SSD physical budget. The separate
+[`hybrid-tier-v2`](sas-hdd-hybrid-tier-v2.md) stream keeps the Btrfs and ZFS
+controls unchanged while testing a three-SSD durable bcachefs hot target.
 
 ## Hardware
 
@@ -114,6 +116,9 @@ sudo install -o root -g root -m 0755 \
 sudo install -o root -g root -m 0755 \
   /opt/modern-fs-benchmark/contrib/sas-hdd/modern-fs-benchmark-hybrid-tier-run \
   /usr/local/sbin/modern-fs-benchmark-hybrid-tier-run
+sudo install -o root -g root -m 0755 \
+  /opt/modern-fs-benchmark/contrib/sas-hdd/modern-fs-benchmark-hybrid-tier-v2-run \
+  /usr/local/sbin/modern-fs-benchmark-hybrid-tier-v2-run
 rm -rf "$staging"
 ```
 
@@ -126,6 +131,7 @@ sudo install -o root -g root -m 0440 /dev/stdin \
   /etc/sudoers.d/modern-fs-benchmark <<'EOF'
 actions-runner ALL=(root) NOPASSWD: /usr/local/sbin/modern-fs-benchmark-run *
 actions-runner ALL=(root) NOPASSWD:NOSETENV: /usr/local/sbin/modern-fs-benchmark-hybrid-tier-run *
+actions-runner ALL=(root) NOPASSWD:NOSETENV: /usr/local/sbin/modern-fs-benchmark-hybrid-tier-v2-run *
 EOF
 sudo visudo -cf /etc/sudoers.d/modern-fs-benchmark
 ```

@@ -2,7 +2,7 @@ name: publish-pages
 
 on:
   workflow_run:
-    workflows: [fs-bench, fs-bench-real-hw, fs-bench-real-hw-sas-hdd, fs-bench-real-hw-sas-hdd-hybrid-tier]
+    workflows: [fs-bench, fs-bench-real-hw, fs-bench-real-hw-sas-hdd, fs-bench-real-hw-sas-hdd-hybrid-tier, fs-bench-real-hw-sas-hdd-hybrid-tier-v2]
     types: [completed]
   workflow_dispatch:
 
@@ -76,6 +76,8 @@ jobs:
             --repo "https://github.com/${{ github.repository }}" \
             --dashboard-link 'Real hardware (farm3)=real-hw/' \
             --dashboard-link 'SAS HDD=sas-hdd/' \
+            --dashboard-link 'Hybrid tier v1=sas-hdd/hybrid-tier/' \
+            --dashboard-link 'Hybrid tier v2=sas-hdd/hybrid-tier-v2/' \
             --setup-detail 'Environment=GitHub-hosted Ubuntu VM; each filesystem configuration runs in a fresh VM' \
             --setup-detail 'Devices=Four 16 GiB loop devices plus one 16 GiB rebuild spare; the ZFS-single job uses one 32 GiB loop device' \
             --setup-detail 'Storage caveat=Loop-device files share the VM ephemeral backing storage; they are not independent physical disks' \
@@ -88,7 +90,9 @@ jobs:
               --hardware-profile farm3 --expected-hardware-profile farm3 \
               --allow-missing-hardware-profile --history-branch results-real-hw \
               --dashboard-link 'Hosted CI=../' \
-              --dashboard-link 'SAS HDD=../sas-hdd/'
+              --dashboard-link 'SAS HDD=../sas-hdd/' \
+              --dashboard-link 'Hybrid tier v1=../sas-hdd/hybrid-tier/' \
+              --dashboard-link 'Hybrid tier v2=../sas-hdd/hybrid-tier-v2/'
           fi
 
       - name: Build sas-hdd dashboard
@@ -102,6 +106,8 @@ jobs:
               --history-branch results-real-hw-sas-hdd \
               --dashboard-link 'Hosted CI=../' \
               --dashboard-link 'Real hardware (farm3)=../real-hw/' \
+              --dashboard-link 'Hybrid tier v1=hybrid-tier/' \
+              --dashboard-link 'Hybrid tier v2=hybrid-tier-v2/' \
               --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
               --setup-detail 'Physical media=Six independent 6 TB 7200 RPM SAS HDDs: four 16 GiB member partitions, one 16 GiB rebuild spare, and one dedicated 32 GiB ZFS-single partition' \
               --setup-detail 'Mirrored layouts=Linux md/LVM RAID10, two striped ZFS mirror pairs, Btrfs RAID1, or bcachefs replicas=2 across four member disks' \
@@ -141,6 +147,7 @@ jobs:
               --dashboard-link 'Hosted CI=../../' \
               --dashboard-link 'Real hardware (farm3)=../../real-hw/' \
               --dashboard-link 'SAS HDD baseline=../' \
+              --dashboard-link 'Hybrid tier v2=../hybrid-tier-v2/' \
               --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
               --setup-detail 'Physical media=Eleven drives: eight SAS HDDs and three SAS SSDs' \
               --setup-detail 'Allocation=Eight 128 GiB HDD data partitions; two SSDs each provide 64 GiB durable data plus 4 GiB cache metadata; the third SSD provides a 64 GiB disposable read cache' \
@@ -148,6 +155,48 @@ jobs:
               --setup-detail 'Btrfs=Single-profile Btrfs on eight-HDD md RAID10 with mirrored SSD LVM dm-cache in writeback mode' \
               --setup-detail 'ZFS=Four HDD mirror vdevs, a mirrored SSD metadata-only special vdev, and SSD L2ARC' \
               --setup-detail 'bcachefs=Replicated HDD background target, mirrored SSD foreground and metadata targets, and a non-durable SSD promote target'
+          fi
+
+      - name: Check out hybrid-tier-v2 result history
+        id: hybrid-tier-v2-history
+        run: |
+          branch=results-real-hw-sas-hdd-hybrid-tier-v2
+          set +e
+          git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch origin "$branch"
+            git worktree add hybrid-tier-v2-data "origin/$branch"
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 2 ]; then
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "failed to query $branch (git exit $status)" >&2
+            exit "$status"
+          fi
+
+      - name: Build hybrid-tier-v2 dashboard
+        if: steps.hybrid-tier-v2-history.outputs.present == 'true'
+        run: |
+          if compgen -G "hybrid-tier-v2-data/runs/*/result-*.json" >/dev/null; then
+            python3 scripts/make-dashboard.py --runs hybrid-tier-v2-data/runs \
+              --out site/sas-hdd/hybrid-tier-v2/index.html \
+              --repo "https://github.com/${{ github.repository }}" \
+              --hardware-profile sas-hdd --expected-hardware-profile sas-hdd \
+              --expected-benchmark-scenario hybrid-tier-v2 \
+              --history-branch results-real-hw-sas-hdd-hybrid-tier-v2 \
+              --dashboard-link 'Hosted CI=../../' \
+              --dashboard-link 'Real hardware (farm3)=../../real-hw/' \
+              --dashboard-link 'SAS HDD baseline=../' \
+              --dashboard-link 'Hybrid tier v1=../hybrid-tier/' \
+              --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
+              --setup-detail 'Physical media=Eleven drives: eight SAS HDDs and three SAS SSDs' \
+              --setup-detail 'Allocation=Eight 128 GiB HDD data partitions; all three SSDs provide 64 GiB data partitions, while the first two also retain 4 GiB dm-cache metadata partitions for Btrfs' \
+              --setup-detail 'Role use=Btrfs is unchanged and uses two SSDs plus their cache-metadata partitions; ZFS is unchanged and uses two SSDs as a special vdev plus the third as L2ARC; bcachefs uses all three SSDs as one durable hot target' \
+              --setup-detail 'Btrfs=Single-profile Btrfs on eight-HDD md RAID10 with mirrored SSD LVM dm-cache in writeback mode' \
+              --setup-detail 'ZFS=Four HDD mirror vdevs, a mirrored SSD metadata-only special vdev, and SSD L2ARC' \
+              --setup-detail 'bcachefs=Replicated HDD background target and a three-SSD foreground, metadata, and promotion target; whole-extent promotion is disabled'
           fi
 
       - uses: actions/configure-pages@v6

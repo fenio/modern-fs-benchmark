@@ -96,3 +96,40 @@ jobs:
             --expected-configuration zfs/hybrid-special-l2arc \
             --expected-configuration bcachefs/hybrid-native \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+  audit-sas-hdd-hybrid-tier-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fetch hybrid-tier-v2 result history
+        id: history
+        run: |
+          branch=results-real-hw-sas-hdd-hybrid-tier-v2
+          set +e
+          git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch origin "$branch"
+            git worktree add hybrid-tier-v2-data "origin/$branch"
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 2 ]; then
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "failed to query $branch (git exit $status)" >&2
+            exit "$status"
+          fi
+
+      - name: Audit hybrid-tier-v2 results
+        if: steps.history.outputs.present == 'true'
+        run: |
+          set -o pipefail
+          python3 scripts/audit-results.py hybrid-tier-v2-data/runs \
+            --expected-hardware-profile sas-hdd \
+            --expected-benchmark-scenario hybrid-tier-v2 \
+            --expected-configuration btrfs/hybrid-dmcache \
+            --expected-configuration zfs/hybrid-special-l2arc \
+            --expected-configuration bcachefs/hybrid-native-3ssd \
+            | tee -a "$GITHUB_STEP_SUMMARY"

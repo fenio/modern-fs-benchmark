@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Lint shell scripts
-        run: shellcheck --external-sources --source-path=SCRIPTDIR scripts/*.sh scripts/lib/*.sh scripts/fs/*.sh
+        run: shellcheck --external-sources --source-path=SCRIPTDIR scripts/*.sh scripts/lib/*.sh scripts/fs/*.sh contrib/sas-hdd/*
 
   reporting:
     runs-on: ubuntu-latest

@@ -52,6 +52,10 @@ ENTITY_ORDER = [
     "zfs/raidz2-enc",
     "btrfs/raid1-luks",
     "bcachefs/replicas2-enc",
+    "btrfs/hybrid-dmcache",
+    "zfs/hybrid-special-l2arc",
+    "bcachefs/hybrid-native",
+    "bcachefs/hybrid-native-3ssd",
 ]
 
 

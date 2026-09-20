@@ -259,6 +259,12 @@ Btrfs over mirrored `dm-cache`, ZFS special/L2ARC classes, and native bcachefs
 foreground/background/promote targets. It publishes independently under
 `/sas-hdd/hybrid-tier/` and never expands the default hosted matrix.
 
+[`hybrid-tier-v2`](docs/sas-hdd-hybrid-tier-v2.md) repeats the full comparison
+while changing only bcachefs to a three-SSD durable hot target shared by
+foreground writes, metadata, and read promotion. Its independent history and
+dashboard live at `results-real-hw-sas-hdd-hybrid-tier-v2` and
+`/sas-hdd/hybrid-tier-v2/`, preserving the v1 result for direct comparison.
+
 **The plan is bigger than loop devices.** CI is the regression-tracking
 harness; the goal is to gather dedicated hardware and run the REAL tests
 there — including the tiered topologies these filesystems were built for and

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,9 @@ SAS_HDD_BENCH_WORKFLOW = (
 )
 HYBRID_TIER_WORKFLOW = (
     ROOT / ".github" / "workflows" / "bench-real-hw-sas-hdd-hybrid-tier.yml"
+)
+HYBRID_TIER_V2_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "bench-real-hw-sas-hdd-hybrid-tier-v2.yml"
 )
 RERUN_SLOW_WORKFLOW = ROOT / ".github" / "workflows" / "rerun-slow.yml"
 PAGES_WORKFLOW = ROOT / ".github" / "workflows" / "publish-pages.yml"
@@ -1030,6 +1034,8 @@ class ResultSchemaTests(unittest.TestCase):
         self.assertIn("--expected-hardware-profile sas-hdd", sas_hdd)
         self.assertIn("sas-hdd-data/runs", pages)
         self.assertIn("site/sas-hdd/index.html", pages)
+        self.assertIn("site/sas-hdd/hybrid-tier/index.html", pages)
+        self.assertIn("site/sas-hdd/hybrid-tier-v2/index.html", pages)
         self.assertNotIn("site/real-hw/sas-hdd/index.html", pages)
         self.assertIn("id: sas-hdd-history", pages)
         self.assertIn(
@@ -1053,6 +1059,8 @@ class ResultSchemaTests(unittest.TestCase):
         self.assertIn("Real hardware (farm3)=../real-hw/", pages)
         self.assertIn("Hosted CI=../../", pages)
         self.assertIn("SAS HDD baseline=../", pages)
+        self.assertIn("Hybrid tier v1=../hybrid-tier/", pages)
+        self.assertIn("Hybrid tier v2=../hybrid-tier-v2/", pages)
         self.assertLess(
             pages.index("actions/upload-pages-artifact"),
             pages.index("actions/deploy-pages"),
@@ -1064,6 +1072,7 @@ class ResultSchemaTests(unittest.TestCase):
             HARDWARE_BENCH_WORKFLOW,
             SAS_HDD_BENCH_WORKFLOW,
             HYBRID_TIER_WORKFLOW,
+            HYBRID_TIER_V2_WORKFLOW,
         ):
             workflow = workflow_path.read_text()
             upload = workflow.index("uses: actions/upload-artifact@v7")
@@ -1685,6 +1694,7 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("--promote_target=readcache", topology)
         self.assertIn("--durability=0", topology)
         self.assertIn("hybrid_assert_zpool_owned", topology)
+        self.assertIn("hybrid_assert_no_imported_zpool_members", topology)
         self.assertIn("hybrid_assert_vg_owned", topology)
         self.assertIn("hybrid_assert_md_owned", topology)
         self.assertIn('findmnt -rn -o TARGET,SOURCE,FSTYPE', topology)
@@ -1703,10 +1713,115 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("cachefile=none", topology)
         self.assertIn("bcachefs show-super", topology)
         self.assertIn("BENCH_RESULT_DEVICE_SIZE_BYTES=omit", topology)
+        self.assertLess(
+            topology.index("\n  hybrid_assert_no_imported_zpool_members\n"),
+            topology.index('wipefs --all --force "$device"'),
+        )
         self.assertIn("benchmark-scenario:$MANAGED_BENCHMARK_SCENARIO", managed)
         self.assertIn("/run/lock/modern-fs-benchmark.lock", managed)
         self.assertIn("/usr/bin/env -i", launcher)
         self.assertNotIn("$GITHUB", launcher)
+
+    def test_hybrid_tier_v2_is_independent_and_comparable(self):
+        workflow = HYBRID_TIER_V2_WORKFLOW.read_text()
+        v1_workflow = HYBRID_TIER_WORKFLOW.read_text()
+        runner = (ROOT / "scripts" / "run-sas-hdd-hybrid-tier-v2.sh").read_text()
+        topology = (
+            ROOT / "scripts" / "lib" / "sas-hdd-hybrid-tier-v2.sh"
+        ).read_text()
+        managed = (
+            ROOT / "scripts" / "managed-sas-hdd-hybrid-tier-runner.sh"
+        ).read_text()
+        launcher = (
+            ROOT
+            / "contrib"
+            / "sas-hdd"
+            / "modern-fs-benchmark-hybrid-tier-v2-run"
+        ).read_text()
+        pages = PAGES_WORKFLOW.read_text()
+
+        self.assertIn("group: fs-bench-sas-hdd-storage", workflow)
+        self.assertIn("benchmark-scenario:hybrid-tier-v2", workflow)
+        self.assertIn("results-real-hw-sas-hdd-hybrid-tier-v2", workflow)
+        self.assertIn("hybrid-v2-cleanup-btrfs-complete", workflow)
+        self.assertIn("hybrid-v2-cleanup-zfs-complete", workflow)
+        self.assertIn("hybrid-v2-cleanup-bcachefs-complete", workflow)
+        self.assertIn('layout == "hybrid-native-3ssd"', workflow)
+        self.assertIn('topology == "native-three-ssd-writeback"', workflow)
+        self.assertNotEqual(workflow, v1_workflow)
+
+        configurations = re.findall(
+            r"^\s+- fs: (\S+)\n\s+layout: (\S+)", workflow, re.MULTILINE
+        )
+        self.assertEqual(
+            configurations,
+            [
+                ("btrfs", "hybrid-dmcache"),
+                ("zfs", "hybrid-special-l2arc"),
+                ("bcachefs", "hybrid-native-3ssd"),
+            ],
+        )
+        self.assertLess(
+            runner.index("trap hybrid_v2_on_exit"),
+            runner.index("hybrid_v2_prepare"),
+        )
+        self.assertIn("source \"$SCRIPT_DIR/lib/sas-hdd-hybrid-tier.sh\"", topology)
+        self.assertIn("--foreground_target=hot", topology)
+        self.assertIn("--promote_target=hot", topology)
+        self.assertIn("--background_target=hdd", topology)
+        self.assertIn("--label=hot.ssd2", topology)
+        self.assertNotIn("--durability=0", topology)
+        self.assertIn("promote_whole_extents=0", topology)
+        self.assertIn("hybrid_v2_assert_bcachefs_options", topology)
+        self.assertIn("bcachefs reconcile status", topology)
+        self.assertIn("time_stats/data_promote", topology)
+        self.assertIn("Verify bcachefs promotion evidence", workflow)
+        self.assertIn("cp incoming/raw/*.txt", workflow)
+        self.assertIn("hybrid-tier-topology-v2", managed)
+        self.assertIn("MANAGED_BENCHMARK_SCENARIO=hybrid-tier-v2", launcher)
+        self.assertIn("/usr/bin/env -i", launcher)
+        self.assertNotIn("$GITHUB", launcher)
+        self.assertIn("site/sas-hdd/hybrid-tier-v2/index.html", pages)
+        self.assertIn("--expected-benchmark-scenario hybrid-tier-v2", pages)
+
+    def test_hybrid_preflight_rejects_devices_in_foreign_zpool(self):
+        topology = ROOT / "scripts" / "lib" / "sas-hdd-hybrid-tier.sh"
+        probe = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f"""
+                source {shlex.quote(str(topology))}
+                die() {{ printf '%s\n' "$*" >&2; exit 42; }}
+                zpool() {{
+                  case "$1" in
+                    list) printf 'foreign_pool\n' ;;
+                    status) printf '  /dev/null ONLINE\n' ;;
+                  esac
+                }}
+                HYBRID_ALL_DEVICES=(/dev/null)
+                hybrid_assert_no_imported_zpool_members
+                """,
+            ],
+            text=True,
+            capture_output=True,
+        )
+
+        self.assertEqual(probe.returncode, 42, probe.stderr)
+        self.assertIn("still owned by imported ZFS pool foreign_pool", probe.stderr)
+
+    def test_hybrid_tier_versions_have_distinct_publication_boundaries(self):
+        v1 = HYBRID_TIER_WORKFLOW.read_text()
+        v2 = HYBRID_TIER_V2_WORKFLOW.read_text()
+
+        for marker in (
+            "fs-bench-real-hw-sas-hdd-hybrid-tier-v2",
+            "modern-fs-benchmark-hybrid-tier-v2-run",
+            "sas-hdd-hybrid-tier-v2-results-",
+            "results-real-hw-sas-hdd-hybrid-tier-v2",
+        ):
+            self.assertIn(marker, v2)
+            self.assertNotIn(marker, v1)
 
     def test_hybrid_tier_provisioner_has_fixed_roles_and_confirmation(self):
         provisioner_path = (
@@ -1803,6 +1918,29 @@ fi
                     "snapscale",
                 ],
                 "bcachefs/hybrid-native": [
+                    "snapshots",
+                    "compression",
+                    "reflink",
+                    "snapscale",
+                ],
+            },
+        )
+        self.assertEqual(
+            schema["scenario_configurations"]["hybrid-tier-v2"],
+            {
+                "btrfs/hybrid-dmcache": [
+                    "snapshots",
+                    "compression",
+                    "reflink",
+                    "snapscale",
+                ],
+                "zfs/hybrid-special-l2arc": [
+                    "snapshots",
+                    "compression",
+                    "reflink",
+                    "snapscale",
+                ],
+                "bcachefs/hybrid-native-3ssd": [
                     "snapshots",
                     "compression",
                     "reflink",
