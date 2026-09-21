@@ -57,7 +57,8 @@ cannot target an SSD device class.
 The ZFS special vdev uses `special_small_blocks=0`, making it metadata-only.
 It is permanent, pool-critical allocation, not a write cache. L2ARC is a
 disposable read cache populated through ARC. No SLOG is included because SLOG
-accelerates synchronous ZIL traffic, not general foreground writes.
+accelerates synchronous ZIL traffic, not general foreground writes. Filesystem
+metadata is therefore SSD-backed, while ZIL records remain on the HDD pool.
 
 The bcachefs targets are placement preferences with fallback behavior, not
 hard partitions. New writes prefer the mirrored `hot` group, background work
@@ -81,7 +82,8 @@ naive raw-device overwrite can be hidden or reordered by a cache. Near-full
 testing remains skipped on real hardware.
 
 Raw artifacts capture md/LVM cache status, ZFS topology and per-vdev IO, or
-bcachefs usage and device roles. A result is publishable only after the
+detailed `bcachefs fs usage -a -h` and device roles. The text evidence is
+retained with each history run. A result is publishable only after the
 filesystem is unmounted, dynamic cache topology is removed, all holders are
 released, and a filesystem-specific cleanup marker exists.
 
