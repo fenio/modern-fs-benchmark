@@ -117,6 +117,15 @@ jobs:
                 .topology == "native-three-ssd-writeback")))' \
              incoming/result-*.json >/dev/null
 
+      - name: Verify bcachefs tier placement evidence
+        run: |
+          prefix=incoming/raw/bcachefs-hybrid-native-3ssd-hybrid-v2
+          python3 scripts/verify-bcachefs-tier-placement.py \
+            --usage "$prefix-fs-usage.txt" \
+            --super "$prefix-device-super.txt" \
+            --expected-hot-count 3 \
+            --expected-promote-target hot
+
       - name: Verify bcachefs promotion evidence
         run: |
           prefix=incoming/raw/bcachefs-hybrid-native-3ssd-hybrid-v2

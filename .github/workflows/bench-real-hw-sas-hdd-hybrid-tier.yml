@@ -117,6 +117,15 @@ jobs:
                 .topology == "native-foreground-background-promote")))' \
             incoming/result-*.json >/dev/null
 
+      - name: Verify bcachefs tier placement evidence
+        run: |
+          prefix=incoming/raw/bcachefs-hybrid-native-hybrid
+          python3 scripts/verify-bcachefs-tier-placement.py \
+            --usage "$prefix-fs-usage.txt" \
+            --super "$prefix-device-super.txt" \
+            --expected-hot-count 2 \
+            --expected-promote-target readcache
+
       - name: Append results to hybrid-tier history branch
         run: |
           branch=results-real-hw-sas-hdd-hybrid-tier-v1
@@ -138,8 +147,10 @@ jobs:
             echo "failed to query $branch (git exit $status)" >&2
             exit "$status"
           fi
-          mkdir -p "hybrid-data/runs/${{ github.run_id }}"
-          cp incoming/result-*.json "hybrid-data/runs/${{ github.run_id }}/"
+          run_dir="hybrid-data/runs/${{ github.run_id }}"
+          mkdir -p "$run_dir/raw"
+          cp incoming/result-*.json "$run_dir/"
+          cp incoming/raw/*.txt "$run_dir/raw/"
           cp LICENSE-DATA hybrid-data/LICENSE
           git -C hybrid-data add LICENSE runs
           git -C hybrid-data commit -m "hybrid-tier-v1 results from run ${{ github.run_id }}" || echo "nothing new"

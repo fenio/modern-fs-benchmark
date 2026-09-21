@@ -56,12 +56,14 @@ V2 runs the same sizes, phase order, cache-dropping policy, and skipped
 degraded/corruption/near-full phases as v1. This keeps every existing metric
 comparable across the two dashboards.
 
-In addition to the standard raw topology evidence, the bcachefs job captures
-reconcile status, cumulative counters, `data_promote` timing, and the effective
-`promote_whole_extents` option. These diagnostics are outside timed workload
-regions and explain whether reads were promoted or skipped. Publication requires
-the effective value to be `0` and retains the text diagnostics with each history
-run instead of relying only on the expiring Actions artifact.
+In addition to detailed `bcachefs fs usage -a -h` and device-superblock
+placement evidence, the bcachefs job captures reconcile status, cumulative
+counters, `data_promote` timing, and the effective `promote_whole_extents`
+option. These diagnostics are outside timed workload regions and explain
+whether reads were promoted or skipped. Publication requires the effective
+value to be `0`, verifies that journal and btree allocations are on the three
+hot SSDs rather than the HDDs, and retains the text diagnostics with each
+history run instead of relying only on the expiring Actions artifact.
 
 V1 and v2 use the same GitHub concurrency group and host `/run/lock` file. They
 must never run concurrently with each other or with the SAS HDD baseline.

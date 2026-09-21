@@ -361,11 +361,8 @@ hybrid_capture_topology() {
       zpool iostat -P -v "$HYBRID_ZPOOL" >"$prefix-zpool-iostat.txt" 2>&1 || true
       ;;
     bcachefs)
-      bcachefs fs usage "$MNT" >"$prefix-fs-usage.txt" 2>&1 || true
-      for device in "${DEVICES[@]}"; do
-        printf '=== %s ===\n' "$device"
-        bcachefs show-super "$device"
-      done >"$prefix-device-super.txt" 2>&1 || true
+      bcachefs fs usage -a -h "$MNT" >"$prefix-fs-usage.txt" 2>&1 || true
+      bcachefs show-super "${DEVICES[0]}" >"$prefix-device-super.txt" 2>&1 || true
       ;;
   esac
 }

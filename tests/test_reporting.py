@@ -19,6 +19,7 @@ AUDIT = ROOT / "scripts" / "audit-results.py"
 SCHEMA = ROOT / "scripts" / "result-schema.json"
 VALIDATOR = ROOT / "scripts" / "validate-result.py"
 BLOCK_QUEUE_PROVENANCE = ROOT / "scripts" / "block-queue-provenance.py"
+TIER_PLACEMENT_VALIDATOR = ROOT / "scripts" / "verify-bcachefs-tier-placement.py"
 RUN_BENCH = ROOT / "scripts" / "run-bench.sh"
 SUMMARIZE = ROOT / "scripts" / "summarize.sh"
 MANAGED_HARDWARE_RUNNER = ROOT / "scripts" / "managed-hardware-runner.sh"
@@ -1826,6 +1827,7 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("--foreground_target=hot", topology)
         self.assertIn("--background_target=hdd", topology)
         self.assertIn("--promote_target=readcache", topology)
+        self.assertIn("--metadata_target=hot", topology)
         self.assertIn("--durability=0", topology)
         self.assertIn("hybrid_assert_zpool_owned", topology)
         self.assertIn("hybrid_assert_no_imported_zpool_members", topology)
@@ -1845,7 +1847,12 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("BENCH_RESULT_NDEV=12", topology)
         self.assertIn("BENCH_RESULT_NDEV=11", topology)
         self.assertIn("cachefile=none", topology)
-        self.assertIn("bcachefs show-super", topology)
+        self.assertIn('bcachefs fs usage -a -h "$MNT"', topology)
+        self.assertIn('bcachefs show-super "${DEVICES[0]}"', topology)
+        workflow = HYBRID_TIER_WORKFLOW.read_text()
+        self.assertIn("verify-bcachefs-tier-placement.py", workflow)
+        self.assertIn("prefix=incoming/raw/bcachefs-hybrid-native-hybrid", workflow)
+        self.assertIn("cp incoming/raw/*.txt", workflow)
         self.assertIn("BENCH_RESULT_DEVICE_SIZE_BYTES=omit", topology)
         self.assertLess(
             topology.index("\n  hybrid_assert_no_imported_zpool_members\n"),
@@ -1903,6 +1910,7 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("--foreground_target=hot", topology)
         self.assertIn("--promote_target=hot", topology)
         self.assertIn("--background_target=hdd", topology)
+        self.assertIn("--metadata_target=hot", topology)
         self.assertIn("--label=hot.ssd2", topology)
         self.assertNotIn("--durability=0", topology)
         self.assertIn("promote_whole_extents=0", topology)
@@ -1910,6 +1918,10 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("bcachefs reconcile status", topology)
         self.assertIn("time_stats/data_promote", topology)
         self.assertIn("Verify bcachefs promotion evidence", workflow)
+        self.assertIn("Verify bcachefs tier placement evidence", workflow)
+        self.assertIn(
+            "prefix=incoming/raw/bcachefs-hybrid-native-3ssd-hybrid-v2", workflow
+        )
         self.assertIn("cp incoming/raw/*.txt", workflow)
         self.assertIn("hybrid-tier-topology-v2", managed)
         self.assertIn("MANAGED_BENCHMARK_SCENARIO=hybrid-tier-v2", launcher)
@@ -1917,6 +1929,94 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertNotIn("$GITHUB", launcher)
         self.assertIn("site/sas-hdd/hybrid-tier-v2/index.html", pages)
         self.assertIn("--expected-benchmark-scenario hybrid-tier-v2", pages)
+
+    def test_bcachefs_tier_placement_evidence_is_verified(self):
+        def super_dump(hot_count):
+            lines = [
+                "  metadata_target: hot",
+                "  foreground_target: hot",
+                "  background_target: hdd",
+                f"  promote_target: {'hot' if hot_count == 3 else 'readcache'}",
+            ]
+            labels = [
+                *(f"hdd.disk{i}" for i in range(8)),
+                *(f"hot.ssd{i}" for i in range(hot_count)),
+            ]
+            if hot_count == 2:
+                labels.append("readcache.ssd0")
+            for index, label in enumerate(labels):
+                hot = label.startswith("hot.")
+                model = (
+                    "HUSMM1640ASS200"
+                    if not label.startswith("hdd.")
+                    else "ST6000NM0095"
+                )
+                lines.extend(
+                    [
+                        f"Device {index}: /dev/test{index} {model}",
+                        f"  Label: {label}",
+                        f"  Has data: {'journal,btree' if hot else '(none)'}",
+                        f"  Rotational: {0 if model == 'HUSMM1640ASS200' else 1}",
+                    ]
+                )
+            return "\n".join(lines) + "\n"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            usage = tmp / "usage.txt"
+            super_path = tmp / "super.txt"
+            usage.write_text(
+                "Data type Required/total Durability Devices Usage\n"
+                "Btree usage:\n"
+                "hdd.disk0 (device 0):\n"
+                "hdd.disk1 (device 1):\n"
+                "hdd.disk2 (device 2):\n"
+                "hdd.disk3 (device 3):\n"
+                "hdd.disk4 (device 4):\n"
+                "hdd.disk5 (device 5):\n"
+                "hdd.disk6 (device 6):\n"
+                "hdd.disk7 (device 7):\n"
+                "hot.ssd0 (device 8):\n"
+                "hot.ssd1 (device 9):\n"
+                "hot.ssd2 (device 10):\n"
+                "readcache.ssd0 (device 10):\n"
+            )
+
+            for hot_count, promote_target in ((2, "readcache"), (3, "hot")):
+                super_path.write_text(super_dump(hot_count))
+                accepted = run_script(
+                    TIER_PLACEMENT_VALIDATOR,
+                    "--usage",
+                    usage,
+                    "--super",
+                    super_path,
+                    "--expected-hot-count",
+                    hot_count,
+                    "--expected-promote-target",
+                    promote_target,
+                )
+                self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            super_path.write_text(
+                super_dump(3).replace(
+                    "  Label: hdd.disk0\n  Has data: (none)",
+                    "  Label: hdd.disk0\n  Has data: journal,btree",
+                )
+            )
+            rejected = run_script(
+                TIER_PLACEMENT_VALIDATOR,
+                "--usage",
+                usage,
+                "--super",
+                super_path,
+                "--expected-hot-count",
+                3,
+                "--expected-promote-target",
+                "hot",
+            )
+
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn("hdd.disk0 contains forbidden allocation types", rejected.stderr)
 
     def test_hybrid_preflight_rejects_devices_in_foreign_zpool(self):
         topology = ROOT / "scripts" / "lib" / "sas-hdd-hybrid-tier.sh"
