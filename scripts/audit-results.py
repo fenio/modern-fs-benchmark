@@ -4,10 +4,10 @@
 Usage: audit-results.py <runs-dir>   (a checkout of the results-data branch)
 
 Two tiers:
-- HARD anomalies (exit 1): impossible orderings, self-healing failures on
+- HARD anomalies (exit 1): impossible percentile orderings, self-healing failures on
   checksumming filesystems, ENOSPC regressions, negative values, metrics
   that went missing where the matrix expects them.
-- WARNINGS (exit 0): high run-to-run variance outside the known-noisy set,
+- WARNINGS (exit 0): surprising idle/load orderings, high run-to-run variance,
   flapping verdicts, and the documented-but-worth-eyeballing patterns
   (md/lvm reporting data-intact by read-balancing luck).
 
@@ -163,7 +163,10 @@ def main():
             hard.append(f"{ent}: fsync p99.9 < p99 ({num('fsync_p999_ms'):.1f} < {num('fsync_p99_ms'):.1f})")
         if num("lat_idle_p99_ms") is not None and num("lat_load_p99_ms") is not None \
            and num("lat_idle_p99_ms") > num("lat_load_p99_ms"):
-            hard.append(f"{ent}: trivial-op latency idle > under-load")
+            warn.append(
+                f"{ent}: trivial-op latency idle > under-load "
+                f"({num('lat_idle_p99_ms'):.1f} > {num('lat_load_p99_ms'):.1f} ms)"
+            )
 
         # negative values anywhere
         for k, v in res.items():
