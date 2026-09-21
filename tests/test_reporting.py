@@ -1790,8 +1790,8 @@ class BackendConfigurationTests(unittest.TestCase):
 
         self.assertIn("git -C \"$repo_root\" fetch origin main", deployer)
         self.assertIn("git -C \"$repo_root\" archive \"$revision\"", deployer)
-        self.assertIn('sudo "$RUNNER_SERVICE" stop', deployer)
-        self.assertIn('sudo "$RUNNER_SERVICE" start', deployer)
+        self.assertIn("runner_service stop", deployer)
+        self.assertIn("runner_service start", deployer)
         self.assertIn("deployment failed; restoring", deployer)
         for installed_launcher in (
             "modern-fs-benchmark-run",

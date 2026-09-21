@@ -47,6 +47,13 @@ install_launchers() {
   done
 }
 
+runner_service() {
+  (
+    cd -- "${RUNNER_SERVICE%/*}"
+    sudo "./${RUNNER_SERVICE##*/}" "$@"
+  )
+}
+
 finish() {
   local status=$?
   trap - EXIT INT TERM
@@ -64,7 +71,7 @@ finish() {
     fi
   fi
   if (( service_stopped )); then
-    sudo "$RUNNER_SERVICE" start || true
+    runner_service start || true
   fi
   exit "$status"
 }
@@ -92,7 +99,7 @@ unsafe_path=$(sudo find "$CANDIDATE" \
 
 if [[ -x $RUNNER_SERVICE ]]; then
   service_stopped=1
-  sudo "$RUNNER_SERVICE" stop
+  runner_service stop
 fi
 
 sudo rm -rf "$BACKUP"
@@ -121,7 +128,7 @@ sudo "$LAUNCHER_DIR/modern-fs-benchmark-hybrid-tier-v2-run" \
   | grep -Fxq benchmark-scenario:hybrid-tier-v2
 
 if (( service_stopped )); then
-  sudo "$RUNNER_SERVICE" start
+  runner_service start
   service_stopped=0
 fi
 deployment_complete=1
