@@ -80,8 +80,7 @@ override device paths.
 
 ## Debian host setup
 
-Run these steps from a clean checkout of the commit that will be benchmarked.
-Do not use the Actions work directory as the privileged source tree.
+Run these steps from a repository checkout outside the Actions work directory.
 
 Install the base tools, then use the repository installer for every filesystem:
 
@@ -95,32 +94,19 @@ done
 sudo modprobe dm_raid dm_snapshot dm_integrity zfs bcachefs
 ```
 
-Install an exact commit as an immutable root-owned tree while the runner is
-stopped. `REVISION` is checked against `${{ github.sha }}` before every job and
-is recorded in each result as `benchmark_revision`.
+Deploy the current `origin/main` commit as an immutable root-owned tree.
+`REVISION` is checked against `${{ github.sha }}` before every job and is
+recorded in each result as `benchmark_revision`. The deployment script prepares
+and validates the replacement before stopping the runner, installs all three
+privileged launchers, verifies their capabilities, and restores the prior tree
+if the swap fails.
 
 ```bash
-revision=$(git rev-parse HEAD)
-staging=$(mktemp -d)
-git archive "$revision" | tar -x -C "$staging"
-printf '%s\n' "$revision" > "$staging/REVISION"
-sudo rm -rf /opt/modern-fs-benchmark
-sudo install -d -o root -g root -m 0755 /opt/modern-fs-benchmark
-sudo cp -a "$staging/." /opt/modern-fs-benchmark/
-sudo chown -R root:root /opt/modern-fs-benchmark
-sudo chmod -R go-w /opt/modern-fs-benchmark
-sudo chmod 0755 /opt/modern-fs-benchmark
-sudo install -o root -g root -m 0755 \
-  /opt/modern-fs-benchmark/contrib/sas-hdd/modern-fs-benchmark-run \
-  /usr/local/sbin/modern-fs-benchmark-run
-sudo install -o root -g root -m 0755 \
-  /opt/modern-fs-benchmark/contrib/sas-hdd/modern-fs-benchmark-hybrid-tier-run \
-  /usr/local/sbin/modern-fs-benchmark-hybrid-tier-run
-sudo install -o root -g root -m 0755 \
-  /opt/modern-fs-benchmark/contrib/sas-hdd/modern-fs-benchmark-hybrid-tier-v2-run \
-  /usr/local/sbin/modern-fs-benchmark-hybrid-tier-v2-run
-rm -rf "$staging"
+contrib/sas-hdd/deploy-runner.sh
 ```
+
+Pass an explicit local Git ref only when intentionally deploying something
+other than `origin/main`.
 
 Create the result directory and grant the runner account only the fixed
 launcher. Replace `actions-runner` if the service uses another account.

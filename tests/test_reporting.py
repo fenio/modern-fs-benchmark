@@ -1768,6 +1768,8 @@ class BackendConfigurationTests(unittest.TestCase):
     def test_sas_hdd_provisioning_and_launcher_enforce_safety_boundary(self):
         provisioner = (ROOT / "contrib" / "sas-hdd" / "provision-storage.sh").read_text()
         launcher = (ROOT / "contrib" / "sas-hdd" / "modern-fs-benchmark-run").read_text()
+        deployer_path = ROOT / "contrib" / "sas-hdd" / "deploy-runner.sh"
+        deployer = deployer_path.read_text()
 
         self.assertIn("FORBIDDEN_OS_DISK=/dev/sda", provisioner)
         self.assertIn("lsblk -snrpo NAME", provisioner)
@@ -1785,6 +1787,24 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("-type l", launcher)
         self.assertIn("installed_revision", launcher)
         self.assertIn("MANAGED_DEVICE_SIZE_BYTES=17179869184", launcher)
+
+        self.assertIn("git -C \"$repo_root\" fetch origin main", deployer)
+        self.assertIn("git -C \"$repo_root\" archive \"$revision\"", deployer)
+        self.assertIn('sudo "$RUNNER_SERVICE" stop', deployer)
+        self.assertIn('sudo "$RUNNER_SERVICE" start', deployer)
+        self.assertIn("deployment failed; restoring", deployer)
+        for installed_launcher in (
+            "modern-fs-benchmark-run",
+            "modern-fs-benchmark-hybrid-tier-run",
+            "modern-fs-benchmark-hybrid-tier-v2-run",
+        ):
+            self.assertIn(installed_launcher, deployer)
+        syntax = subprocess.run(
+            ["bash", "-n", str(deployer_path)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(syntax.returncode, 0, syntax.stderr)
 
         refused = subprocess.run(
             [str(ROOT / "contrib" / "sas-hdd" / "provision-storage.sh")],
