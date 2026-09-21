@@ -114,8 +114,8 @@ authoritative list is the matrix in `.github/workflows/bench.yml`):
 
 Benchmark charts invite "which is fastest". For long-term storage that is
 the wrong question — the right one is **which stack tells you the truth
-about your data**, and it's why this suite exists (the corruption phase
-re-proves it every couple of hours):
+about your data**, and it's why this suite exists (GitHub-hosted CI re-proves
+the corruption behavior every six hours):
 
 - **ext4/xfs on md or LVM raid — the default "safe" Linux setup — has no
   data checksums.** Raid protects against a *missing* disk, not a *lying*
@@ -156,9 +156,9 @@ post-corruption remount for every backend.
 
 ### CI (GitHub Actions, loop devices)
 
-Every push/2-hourly cron builds each filesystem across 4 loop devices backed by
-sparse files, runs the suite, and publishes a results table in the job summary
-plus JSON artifacts. Each job's artifact also contains a **full command trace**
+Every push and the 6-hourly cron build each filesystem across 4 loop devices
+backed by sparse files, run the suite, and publish a results table in the job
+summary plus JSON artifacts. Each job's artifact also contains a **full command trace**
 (`raw/<config>-trace.log`) — every command executed, arguments fully expanded,
 with source file and line — so "what exactly was run" is never a question.
 (`BENCH_TRACE=1` mirrors it into the live log instead.)
@@ -178,7 +178,7 @@ different machines. Mitigations, from strongest signal to weakest:
    junk numbers from an unlucky VM never enter the results.
 3. Cross-filesystem deltas within one run — treat small differences (tens of
    percent) as noise; large ones (2×+) are usually real.
-4. Trends over repeated runs (2-hourly cron + every push) average the VM
+4. Trends over repeated runs (6-hourly cron + every push) average the VM
    lottery out — this is where cross-filesystem conclusions belong.
 
 ### Real hardware
