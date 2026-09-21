@@ -597,6 +597,26 @@ class AuditRegressionTests(unittest.TestCase):
             result.stdout,
         )
 
+    def test_idle_latency_above_loaded_is_a_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            shutil.copytree(FIXTURE_RUNS, runs)
+            result_file = runs / "101" / "result-btrfs-raid1.json"
+            document = json.loads(result_file.read_text())
+            document["results"]["lat_idle_p99_ms"] = 12.0
+            document["results"]["lat_load_p99_ms"] = 8.0
+            result_file.write_text(json.dumps(document))
+
+            result = run_audit(runs)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("## Warnings", result.stdout)
+        self.assertIn(
+            "btrfs/raid1: trivial-op latency idle > under-load "
+            "(12.0 > 8.0 ms)",
+            result.stdout,
+        )
+
     def test_historical_documents_are_not_forced_through_current_schema(self):
         with tempfile.TemporaryDirectory() as tmp:
             runs = Path(tmp) / "runs"
