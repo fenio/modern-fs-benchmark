@@ -281,7 +281,12 @@ teardown_devices() {
       return 1
     fi
     for dev in "${ALL_LOOPS[@]}"; do
-      losetup -d "$dev" 2>/dev/null || detach_ok=0
+      # A degraded-device test may detach a loop number that a later phase
+      # reuses, leaving duplicate names in ALL_LOOPS. Detach each active
+      # incarnation once without treating the stale entry as a failure.
+      if losetup "$dev" >/dev/null 2>&1; then
+        losetup -d "$dev" 2>/dev/null || detach_ok=0
+      fi
     done
     if [ "$detach_ok" = 1 ]; then
       rm -rf "$DISK_DIR"
