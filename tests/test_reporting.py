@@ -1367,6 +1367,41 @@ class ResultSchemaTests(unittest.TestCase):
         self.assertIn("if ! teardown_devices && ((status == 0)); then", source)
         self.assertIn("trap cleanup_on_exit EXIT", source)
 
+    def test_cleanup_allows_reused_loop_device_number(self):
+        result = run_benchmark_shell(
+            r'''
+fs_teardown() { :; }
+luks_close_all() { :; }
+log() { printf 'log:%s\n' "$*"; }
+attached='/dev/loop1 /dev/loop2'
+losetup() {
+  if [ "$1" = -d ]; then
+    case " $attached " in
+      *" $2 "*) attached=${attached/"$2"/}; printf 'detached:%s\n' "$2" ;;
+      *) return 1 ;;
+    esac
+  else
+    case " $attached " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+  fi
+}
+rm() { printf 'removed:%s\n' "$2"; }
+LOOPS_CREATED=1
+ALL_LOOPS=(/dev/loop1 /dev/loop1 /dev/loop2)
+DISK_DIR=/tmp/fsbench-test
+teardown_devices
+'''
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.splitlines(),
+            [
+                "detached:/dev/loop1",
+                "detached:/dev/loop2",
+                "removed:/tmp/fsbench-test",
+            ],
+        )
+
     def test_benchmark_emits_current_schema_version(self):
         schema_version = json.loads(SCHEMA.read_text())["schema_version"]
         match = re.search(r"'\(\{schema_version: (\d+),", RUN_BENCH.read_text())
