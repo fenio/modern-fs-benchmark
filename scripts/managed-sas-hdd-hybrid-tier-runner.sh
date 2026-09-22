@@ -42,8 +42,10 @@ fs=$3
 case "$fs" in btrfs | zfs | bcachefs) ;; *) echo "unsupported filesystem: $fs" >&2; exit 2 ;; esac
 
 exec 9>/run/lock/modern-fs-benchmark.lock
-if ! flock -n 9; then
-  echo "another filesystem benchmark is already running" >&2
+# A cancelled sudo benchmark can outlive its Actions step while a kernel-backed
+# scrub finishes. Let the next serial job wait for EXIT cleanup to release it.
+if ! flock -w 3600 9; then
+  echo "timed out waiting for another filesystem benchmark to finish" >&2
   exit 75
 fi
 

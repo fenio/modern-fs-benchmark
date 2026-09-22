@@ -1799,6 +1799,19 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn('.benchmark_revision == $expected_revision', workflow)
         self.assertIn("results-real-hw-sas-hdd", workflow)
         self.assertIn('startswith("/dev/disk/by-id/")', workflow)
+        self.assertIn("timeout-minutes: 180", workflow)
+
+    def test_sas_hdd_runners_wait_for_cancelled_benchmark_cleanup(self):
+        for path in (
+            MANAGED_HARDWARE_RUNNER,
+            ROOT / "scripts" / "managed-sas-hdd-hybrid-tier-runner.sh",
+        ):
+            runner = path.read_text()
+            self.assertIn("flock -w 3600 9", runner)
+            self.assertIn(
+                "timed out waiting for another filesystem benchmark to finish",
+                runner,
+            )
 
     def test_sas_hdd_provisioning_and_launcher_enforce_safety_boundary(self):
         provisioner = (ROOT / "contrib" / "sas-hdd" / "provision-storage.sh").read_text()
@@ -2306,7 +2319,7 @@ fi
         self.assertIn("config.boot.zfs.package", module)
         self.assertIn("config.boot.zfs.modulePackage", module)
         self.assertIn('[ "dm_raid" "dm_snapshot" "dm_integrity" ]', module)
-        self.assertIn("another filesystem benchmark is already running", managed)
+        self.assertIn("flock -w 3600 9", managed)
         self.assertIn("zfsSingleDevice", module)
         self.assertIn("34359738368", managed)
         self.assertIn("resolves to a duplicate block device", managed)
