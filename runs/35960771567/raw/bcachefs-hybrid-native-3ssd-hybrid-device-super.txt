@@ -1,0 +1,396 @@
+External UUID:                             ae63e86b-196d-4190-8ee1-89a47b634465
+Internal UUID:                             7158a160-eb65-4201-bc10-935288b71447
+Magic number:                              c68573f6-66ce-90a9-d96a-60cf803df7ef
+Device index:                              0
+Label:                                     (none)
+Version:                                   per_dev_fragmentation_lru (1.39)
+Incompatible features allowed:             per_dev_fragmentation_lru (1.39)
+Incompatible features in use:              no_sb_user_data_replicas (1.36)
+Version upgrade complete:                  per_dev_fragmentation_lru (1.39)
+Oldest version on disk:                    per_dev_fragmentation_lru (1.39)
+Created:                                   Thu Sep 24 08:53:01 2026
+Sequence number:                           528
+Time of last write:                        Thu Sep 24 09:12:30 2026
+Superblock size:                           11.8k/1.00M
+Clean:                                     0
+Devices:                                   11
+Sections:                                  replicas_v0,disk_groups,clean,journal_v2,counters,members_v2,ext,downgrade,recovery_passes,extent_type_u64s,errors_v2
+Features:                                  zstd,reflink,new_siphash,inline_data,new_extent_overwrite,btree_ptr_v2,extents_above_btree_updates,btree_updates_journalled,reflink_inline_data,new_varint,journal_no_flush,alloc_v2,extents_across_btree_nodes,incompat_version_field
+Compat features:                           alloc_info,alloc_metadata,extents_above_btree_updates_done,bformat_overflow_done,no_stale_ptrs,stripe_frag_accounting,inode_opts_propagated
+
+Options:
+  block_size:                              4.00k
+  btree_node_size:                         256k
+  errors:                                  continue [fix_safe] panic ro 
+  write_error_timeout:                     30
+  metadata_replicas:                       2
+  data_replicas:                           2
+  encoded_extent_max:                      256k
+  metadata_checksum:                       none [crc32c] crc64 xxhash 
+  data_checksum:                           none [crc32c] crc64 xxhash 
+  checksum_err_retry_nr:                   3
+  compression:                             none
+  background_compression:                  none
+  str_hash:                                crc32c crc64 [siphash] 
+  metadata_target:                         hot
+  foreground_target:                       hot
+  background_target:                       hdd
+  promote_target:                          hot
+  erasure_code:                            0
+  ec_max_data_blocks:                      0
+  casefold:                                0
+  inodes_32bit:                            0
+  shard_inode_numbers_bits:                6
+  gc_reserve_percent:                      8
+  gc_reserve_bytes:                        0
+  root_reserve_percent:                    0
+  wide_macs:                               0
+  promote_whole_extents:                   1
+  acl:                                     1
+  usrquota:                                0
+  grpquota:                                0
+  prjquota:                                0
+  degraded:                                [ask] yes very no 
+  missing_dev_timeout:                     0
+  journal_flush_delay:                     1000
+  journal_flush_disabled:                  0
+  move_writes_fua:                         0
+  journal_reclaim_delay:                   100
+  writeback_timeout:                       0
+  journal_rewind_discard_buffer_percent:   4
+  scrub_recent_journal_entries:            [unclean] no always 
+  scrub_journal_max_rewind_secs:           10
+  journal_transaction_names:               1
+  allocator_stuck_timeout:                 30
+  version_upgrade:                         [compatible] incompatible none 
+  nocow:                                   0
+  reconcile_on_ac_only:                    0
+  btree_cache_shrinker_seeks:              2
+  dev_readahead:                           2.00M
+  ec_stripe_buf_limit:                     5
+
+ext (size 120):
+Recovery passes required:                  
+Errors to silently fix:                    
+Btrees with missing data:                  
+Btrees that have ever lost data:           
+Btrees validated clean:                    
+Device 0:                                  /dev/sdg1	ST6000NM0095    	S/N: ZAD1W11G0000C75039MS
+  Label:                                   hdd.disk0
+  UUID:                                    2a7953b4-a746-4086-9f8b-ead3968442fb
+  Size:                                    128G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 65536
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                (none)
+  Rotational:                              1
+  Btree allocated bitmap blocksize:        1
+  Btree allocated bitmap:                  0000000000000000000000000000000000000000000000000000000000000000
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sdg1
+  Last device model:                       ST6000NM0095    
+  Last device serial:                      ZAD1W11G0000C75039MS
+Device 1:                                  /dev/sdh1	ST6000NM0095    	S/N: ZAD1VMDM0000C7502F4D
+  Label:                                   hdd.disk1
+  UUID:                                    222f8eb5-48af-4cf9-a42d-80ef59b7b649
+  Size:                                    128G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 65536
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                (none)
+  Rotational:                              1
+  Btree allocated bitmap blocksize:        1
+  Btree allocated bitmap:                  0000000000000000000000000000000000000000000000000000000000000000
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sdh1
+  Last device model:                       ST6000NM0095    
+  Last device serial:                      ZAD1VMDM0000C7502F4D
+Device 2:                                  /dev/sdi1	ST6000NM0095    	S/N: ZAD1VLQ70000C75039ZY
+  Label:                                   hdd.disk2
+  UUID:                                    18065a75-4557-46ba-a035-5bcb68ee564c
+  Size:                                    128G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 65536
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                (none)
+  Rotational:                              1
+  Btree allocated bitmap blocksize:        1
+  Btree allocated bitmap:                  0000000000000000000000000000000000000000000000000000000000000000
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sdi1
+  Last device model:                       ST6000NM0095    
+  Last device serial:                      ZAD1VLQ70000C75039ZY
+Device 3:                                  /dev/sdj1	ST6000NM0095    	S/N: ZAD1VMBQ0000C7502S9V
+  Label:                                   hdd.disk3
+  UUID:                                    90785976-3253-4bf4-acef-c4fcf0e63234
+  Size:                                    128G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 65536
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                (none)
+  Rotational:                              1
+  Btree allocated bitmap blocksize:        1
+  Btree allocated bitmap:                  0000000000000000000000000000000000000000000000000000000000000000
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sdj1
+  Last device model:                       ST6000NM0095    
+  Last device serial:                      ZAD1VMBQ0000C7502S9V
+Device 4:                                  /dev/sdk1	ST6000NM0095    	S/N: ZAD1VLTR0000C7503RS5
+  Label:                                   hdd.disk4
+  UUID:                                    bf341e52-995a-4973-9866-f1ef45c96c09
+  Size:                                    128G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 65536
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                (none)
+  Rotational:                              1
+  Btree allocated bitmap blocksize:        1
+  Btree allocated bitmap:                  0000000000000000000000000000000000000000000000000000000000000000
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sdk1
+  Last device model:                       ST6000NM0095    
+  Last device serial:                      ZAD1VLTR0000C7503RS5
+Device 5:                                  /dev/sdm1	ST6000NM0095    	S/N: ZAD1W0SE0000C75038PS
+  Label:                                   hdd.disk5
+  UUID:                                    f49eb765-de69-4ead-b349-9881e97ed873
+  Size:                                    128G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 65536
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                (none)
+  Rotational:                              1
+  Btree allocated bitmap blocksize:        1
+  Btree allocated bitmap:                  0000000000000000000000000000000000000000000000000000000000000000
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sdm1
+  Last device model:                       ST6000NM0095    
+  Last device serial:                      ZAD1W0SE0000C75038PS
+Device 6:                                  /dev/sdt1	ST6000NM0095    	S/N: ZAD1W11N0000C75039MA
+  Label:                                   hdd.disk6
+  UUID:                                    37b78781-4aa3-4dc8-b7c2-7a41185512b8
+  Size:                                    128G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 65536
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                (none)
+  Rotational:                              1
+  Btree allocated bitmap blocksize:        1
+  Btree allocated bitmap:                  0000000000000000000000000000000000000000000000000000000000000000
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sdt1
+  Last device model:                       ST6000NM0095    
+  Last device serial:                      ZAD1W11N0000C75039MA
+Device 7:                                  /dev/sdu1	ST6000NM0095    	S/N: ZAD1W1XT0000C7503S55
+  Label:                                   hdd.disk7
+  UUID:                                    d722e046-ae9a-4dc1-9852-38aacb9fb201
+  Size:                                    128G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 65536
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                (none)
+  Rotational:                              1
+  Btree allocated bitmap blocksize:        1
+  Btree allocated bitmap:                  0000000000000000000000000000000000000000000000000000000000000000
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sdu1
+  Last device model:                       ST6000NM0095    
+  Last device serial:                      ZAD1W1XT0000C7503S55
+Device 8:                                  /dev/sdc1	HUSMM1640ASS200 	S/N: 0QYEXUPA
+  Label:                                   hot.ssd0
+  UUID:                                    62368a6e-7c15-4efd-b361-b93c77b4b62b
+  Size:                                    64.0G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 32768
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                journal,btree
+  Rotational:                              0
+  Btree allocated bitmap blocksize:        512k
+  Btree allocated bitmap:                  0000000000000000000100001000010100000000011110111100101000000100
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sdc1
+  Last device model:                       HUSMM1640ASS200 
+  Last device serial:                      0QYEXUPA
+Device 9:                                  /dev/sdd1	HUSMM1640ASS200 	S/N: 0QYEWR6A
+  Label:                                   hot.ssd1
+  UUID:                                    4d736d2f-a87e-4224-a6e4-7c3156c6fa5b
+  Size:                                    64.0G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 32768
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                journal,btree
+  Rotational:                              0
+  Btree allocated bitmap blocksize:        2.00M
+  Btree allocated bitmap:                  0000000000000000000000000000000000000000000000000000001000111111
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sdd1
+  Last device model:                       HUSMM1640ASS200 
+  Last device serial:                      0QYEWR6A
+Device 10:                                 /dev/sde1	HUSMM1640ASS200 	S/N: 0QYEWSPA
+  Label:                                   hot.ssd2
+  UUID:                                    dfeefa72-dc8d-4f42-9f3d-c5f783cf17b0
+  Size:                                    64.0G
+  read errors:                             0
+  write errors:                            0
+  checksum errors:                         0
+  seqread iops:                            0
+  seqwrite iops:                           0
+  randread iops:                           0
+  randwrite iops:                          0
+  Bucket size:                             2.00M
+  First bucket:                            0
+  Buckets:                                 32768
+  Last mount:                              Thu Sep 24 09:11:53 2026
+  Last superblock write:                   528
+  State:                                   rw
+  Data allowed:                            journal,btree,user
+  Has data:                                journal,btree
+  Rotational:                              0
+  Btree allocated bitmap blocksize:        512k
+  Btree allocated bitmap:                  0000000000000000000000000001000000000000110010100110100000000100
+  Durability:                              1
+  Discard:                                 1
+  Freespace initialized:                   1
+  Resize on mount:                         0
+  Last device name:                        sde1
+  Last device model:                       HUSMM1640ASS200 
+  Last device serial:                      0QYEWSPA

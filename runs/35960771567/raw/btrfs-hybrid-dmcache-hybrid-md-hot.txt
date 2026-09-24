@@ -1,0 +1,26 @@
+/dev/md/fsbench-hybrid-v2-hot:
+           Version : 1.2
+     Creation Time : Thu Sep 24 07:37:42 2026
+        Raid Level : raid1
+        Array Size : 67042304 (63.94 GiB 68.65 GB)
+     Used Dev Size : 67042304 (63.94 GiB 68.65 GB)
+      Raid Devices : 2
+     Total Devices : 2
+       Persistence : Superblock is persistent
+
+       Update Time : Thu Sep 24 08:07:28 2026
+             State : clean 
+    Active Devices : 2
+   Working Devices : 2
+    Failed Devices : 0
+     Spare Devices : 0
+
+Consistency Policy : resync
+
+              Name : fsbench-hybrid-v2-hot
+              UUID : 5d58e245:e0020427:27c091c7:5062caaa
+            Events : 1
+
+    Number   Major   Minor   RaidDevice State
+       0       8       33        0      active sync   /dev/sdc1
+       1       8       49        1      active sync   /dev/sdd1
