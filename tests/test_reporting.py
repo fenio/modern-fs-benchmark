@@ -1955,8 +1955,12 @@ class BackendConfigurationTests(unittest.TestCase):
         workflow = HYBRID_TIER_V2_WORKFLOW.read_text()
         v1_workflow = HYBRID_TIER_WORKFLOW.read_text()
         runner = (ROOT / "scripts" / "run-sas-hdd-hybrid-tier-v2.sh").read_text()
+        v1_runner = (ROOT / "scripts" / "run-sas-hdd-hybrid-tier.sh").read_text()
         topology = (
             ROOT / "scripts" / "lib" / "sas-hdd-hybrid-tier-v2.sh"
+        ).read_text()
+        shared_topology = (
+            ROOT / "scripts" / "lib" / "sas-hdd-hybrid-tier.sh"
         ).read_text()
         managed = (
             ROOT / "scripts" / "managed-sas-hdd-hybrid-tier-runner.sh"
@@ -2005,6 +2009,12 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("hybrid_v2_assert_bcachefs_options", topology)
         self.assertIn("bcachefs reconcile status", topology)
         self.assertIn("time_stats/data_promote", topology)
+        self.assertIn("hybrid_capture_topology hybrid-v2", topology)
+        self.assertIn("hybrid_capture_topology hybrid", v1_runner)
+        self.assertIn("local suffix=${1:-hybrid}", shared_topology)
+        self.assertIn(
+            'local prefix="$RESULTS_DIR/raw/$BENCH_ID-$suffix"', shared_topology
+        )
         self.assertIn("Verify bcachefs promotion evidence", workflow)
         self.assertIn("Verify bcachefs tier placement evidence", workflow)
         self.assertIn(

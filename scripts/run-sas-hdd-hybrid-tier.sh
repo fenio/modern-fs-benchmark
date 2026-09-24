@@ -32,7 +32,7 @@ hybrid_on_exit() {
   trap - EXIT INT TERM
   set +e
   if [[ $HYBRID_COMPLETED -eq 1 ]]; then
-    hybrid_capture_topology
+    hybrid_capture_topology hybrid
   fi
   hybrid_cleanup
   cleanup_status=$?
