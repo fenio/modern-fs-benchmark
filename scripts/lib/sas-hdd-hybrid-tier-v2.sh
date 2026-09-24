@@ -99,7 +99,7 @@ hybrid_v2_capture_bcachefs_diagnostics() {
 }
 
 hybrid_v2_capture_topology() {
-  hybrid_capture_topology
+  hybrid_capture_topology hybrid-v2
   hybrid_v2_capture_bcachefs_diagnostics
 }
 

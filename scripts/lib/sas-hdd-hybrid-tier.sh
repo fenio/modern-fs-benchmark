@@ -347,7 +347,8 @@ hybrid_install_backend() {
 }
 
 hybrid_capture_topology() {
-  local prefix="$RESULTS_DIR/raw/$BENCH_ID-hybrid"
+  local suffix=${1:-hybrid}
+  local prefix="$RESULTS_DIR/raw/$BENCH_ID-$suffix"
   lsblk -b -o NAME,PATH,SIZE,TYPE,FSTYPE,MOUNTPOINTS >"$prefix-lsblk.txt"
   case "$FS" in
     btrfs)
