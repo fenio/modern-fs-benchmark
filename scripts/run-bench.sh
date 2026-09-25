@@ -12,6 +12,7 @@
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+BENCH_DEFER_RESULT_FINALIZATION=0
 
 configure_benchmark() {
   FS=${1:?usage: run-bench.sh <fs> <layout>}
@@ -780,6 +781,13 @@ fi
 }
 
 # --- Assemble result -------------------------------------------------------
+finalize_result() {
+python3 "$SCRIPT_DIR/validate-result.py" "$RESULT_FILE"
+chmod -R a+rX "$RESULTS_DIR"
+log "done: $RESULT_FILE"
+jq . "$RESULT_FILE" >&2
+}
+
 write_result() {
 local include_hardware_random_scaling=false include_device_size=true
 hardware_random_scaling_enabled && include_hardware_random_scaling=true
@@ -963,10 +971,9 @@ jq -n \
      else {topology: $topology} end))' \
   > "$RESULT_FILE"
 
-python3 "$SCRIPT_DIR/validate-result.py" "$RESULT_FILE"
-chmod -R a+rX "$RESULTS_DIR"
-log "done: $RESULT_FILE"
-jq . "$RESULT_FILE" >&2
+if (( ! BENCH_DEFER_RESULT_FINALIZATION )); then
+  finalize_result
+fi
 }
 
 run_benchmark_phases() {

@@ -649,7 +649,7 @@ three_copy_extend_result() {
       post_double_scrub_ok: $post_double_scrub_ok
     }' "$RESULT_FILE" >"$tmp"
   mv "$tmp" "$RESULT_FILE"
-  python3 "$SCRIPT_DIR/validate-result.py" "$RESULT_FILE"
+  finalize_result
 }
 
 three_copy_capture_topology() {
