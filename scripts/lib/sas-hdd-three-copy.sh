@@ -81,6 +81,18 @@ three_copy_assert_mapping_table() {
   [[ $target == linear && $backing == "$major_minor" && $offset == 0 ]]
 }
 
+three_copy_assert_topology_mapping() {
+  local name=$1 i allow_error=0
+  for i in "${!THREE_COPY_MEMBER_NAMES[@]}"; do
+    if [[ ${THREE_COPY_MEMBER_NAMES[i]} == "$name" \
+      && ${THREE_COPY_FAILED_MEMBERS[i]} == 1 ]]; then
+      allow_error=1
+      break
+    fi
+  done
+  three_copy_assert_mapping_table "$name" "$allow_error"
+}
+
 three_copy_wrap_devices() {
   local i name
   [[ ${#DEVICES[@]} -eq 3 ]] || die "three-copy requires exactly three members"
@@ -255,7 +267,7 @@ three_copy_assert_topology_owned() {
         fi
         [[ $allowed == *" $node "* ]] \
           || { log "WARNING: /dev/md/fsbench contains foreign member $node"; return 1; }
-        three_copy_assert_mapping_table "$node" \
+        three_copy_assert_topology_mapping "$node" \
           || { log "WARNING: /dev/md/fsbench member $node has an unexpected table"; return 1; }
       done
       ((found == 1))
@@ -288,7 +300,7 @@ three_copy_assert_topology_owned() {
         fi
         [[ $allowed == *" $node "* ]] \
           || { log "WARNING: ZFS pool fsbench contains foreign member $path"; return 1; }
-        three_copy_assert_mapping_table "$node" \
+        three_copy_assert_topology_mapping "$node" \
           || { log "WARNING: ZFS member $path has an unexpected table"; return 1; }
       done < <(awk '
         /^[[:space:]]*NAME[[:space:]]+STATE/ { in_config = 1; next }
@@ -506,11 +518,11 @@ three_copy_prepare_fresh_double_loss() {
   done
   SPARE_DEV=${SPARE_DEVICES[0]}
   THREE_COPY_FAILED_MEMBERS=(0 0 0)
+  three_copy_wipe_owned_mappings 1 \
+    || die "failed to clear the owned mappings before reformatting"
   three_copy_restore_members
   three_copy_assert_detached \
     || die "restored mappings are not detached before reformatting"
-  three_copy_wipe_owned_mappings \
-    || die "failed to clear the owned mappings before reformatting"
   THREE_COPY_FS_STARTED=1
   fs_setup
 }
@@ -689,7 +701,7 @@ three_copy_capture_topology() {
 
 three_copy_assert_mappings_unused() {
   local name node physical physical_node holder expected_holder mounts open_count
-  local identity mapper_identity physical_identity swap_device imported_pool pool_device
+  local identity mapper_identity physical_identity swap_device imported_pool pool_device target
   local swap_devices pools pool_status zfs_identities=" "
   swap_devices=$(swapon --show=NAME --noheadings) \
     || { log "WARNING: failed to enumerate active swap"; return 1; }
@@ -709,8 +721,9 @@ three_copy_assert_mappings_unused() {
   fi
   for name in "${THREE_COPY_MEMBER_NAMES[@]}" "${THREE_COPY_SPARE_NAMES[@]}"; do
     dmsetup info "$name" >/dev/null 2>&1 || continue
-    three_copy_assert_mapping_table "$name" \
+    three_copy_assert_mapping_table "$name" 1 \
       || { log "WARNING: mapping $name has an unexpected backing device"; return 1; }
+    target=$(dmsetup table "$name" | awk 'NR == 1 {print $3}') || return
     node="/dev/mapper/$name"
     physical=$(three_copy_mapping_device "$name") || return
     for identity in "$node" "$physical"; do
@@ -741,10 +754,11 @@ three_copy_assert_mappings_unused() {
     done
     physical_node=$(readlink -f "$physical")
     physical_node=${physical_node##*/}
-    expected_holder=$node
+    expected_holder=
+    [[ $target == linear ]] && expected_holder=$node
     for holder in "/sys/class/block/$physical_node/holders/"*; do
       [[ -e $holder ]] || continue
-      [[ ${holder##*/} == "$expected_holder" ]] \
+      [[ -n $expected_holder && ${holder##*/} == "$expected_holder" ]] \
         || { log "WARNING: $physical has foreign holder ${holder##*/}"; return 1; }
     done
     open_count=$(dmsetup info -c --noheadings -o open "$name" | tr -d ' ') \
@@ -755,12 +769,22 @@ three_copy_assert_mappings_unused() {
 }
 
 three_copy_wipe_owned_mappings() {
-  local name
+  local require_all=${1:-0} name target wipe_target
   for name in "${THREE_COPY_MEMBER_NAMES[@]}" "${THREE_COPY_SPARE_NAMES[@]}"; do
-    dmsetup info "$name" >/dev/null 2>&1 || continue
+    if ! dmsetup info "$name" >/dev/null 2>&1; then
+      [[ $require_all == 0 ]] && continue
+      log "WARNING: required mapping $name is missing"
+      return 1
+    fi
     three_copy_assert_mappings_unused || return
-    three_copy_assert_mapping_table "$name" || return
-    wipefs --lock=yes --all --force "/dev/mapper/$name" || return
+    three_copy_assert_mapping_table "$name" 1 || return
+    target=$(dmsetup table "$name" | awk 'NR == 1 {print $3}') || return
+    if [[ $target == error ]]; then
+      wipe_target=$(three_copy_mapping_device "$name") || return
+    else
+      wipe_target="/dev/mapper/$name"
+    fi
+    wipefs --lock=yes --all --force "$wipe_target" || return
     udevadm settle || return
   done
 }

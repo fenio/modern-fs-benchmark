@@ -2153,10 +2153,24 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn('bcachefs reconcile status "$MNT"', topology)
         self.assertIn("three_copy_wipe_owned_mappings", topology)
         self.assertIn("three_copy_assert_mapping_owned", topology)
+        self.assertIn("three_copy_assert_topology_mapping", topology)
+        self.assertIn("required mapping $name is missing", topology)
         self.assertIn("THREE_COPY_TOPOLOGY_ID", topology)
         self.assertIn("ZFS pool fsbench GUID does not match this run", topology)
         self.assertIn("POST_DOUBLE_SCRUB_OK=true", topology)
         self.assertIn("$FS == btrfs && $LAYOUT == raid1", topology)
+        self.assertLess(
+            runner.index("three_copy_wipe_owned_mappings"),
+            runner.index("three_copy_restore_members"),
+        )
+        fresh_reset = topology[
+            topology.index("three_copy_prepare_fresh_double_loss()") :
+            topology.index("three_copy_final_scrub()")
+        ]
+        self.assertLess(
+            fresh_reset.index("three_copy_wipe_owned_mappings"),
+            fresh_reset.index("three_copy_restore_members"),
+        )
 
         self.assertIn("mirror3)", zfs)
         self.assertIn('vdevs=(mirror "${DEVICES[@]}")', zfs)

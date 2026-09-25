@@ -34,13 +34,13 @@ three_copy_on_exit() {
     fi
   fi
   if [[ $THREE_COPY_MAPPINGS_STARTED -eq 1 && $teardown_safe -eq 1 ]]; then
-    if ! three_copy_restore_members || ! three_copy_assert_detached; then
+    if ! three_copy_wipe_owned_mappings "$THREE_COPY_FS_STARTED"; then
       cleanup_status=1
       teardown_safe=0
     fi
   fi
   if [[ $THREE_COPY_MAPPINGS_STARTED -eq 1 && $teardown_safe -eq 1 ]]; then
-    if ! three_copy_wipe_owned_mappings; then
+    if ! three_copy_restore_members || ! three_copy_assert_detached; then
       cleanup_status=1
       teardown_safe=0
     fi
