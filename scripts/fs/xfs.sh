@@ -55,6 +55,9 @@ fs_setup() {
     ZVOL_DEV=$(zvol_resolve_device)
     mkfs.xfs -fq "$ZVOL_DEV"
     mount -t xfs -o noatime "$ZVOL_DEV" "$MNT"
+    if declare -F benchmark_mount_started >/dev/null; then
+      benchmark_mount_started
+    fi
     mkdir -p "$MNT/data"
     DATA="$MNT/data"
     return 0
@@ -62,6 +65,9 @@ fs_setup() {
   layered_make_dev || return
   mkfs.xfs -fq "$LAYERED_DEV" || return
   mount -t xfs -o noatime "$LAYERED_DEV" "$MNT" || return
+  if declare -F benchmark_mount_started >/dev/null; then
+    benchmark_mount_started
+  fi
   mkdir -p "$MNT/data" || return
   # shellcheck disable=SC2034  # consumed by run-bench.sh
   DATA="$MNT/data"

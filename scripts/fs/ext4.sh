@@ -21,6 +21,9 @@ fs_setup() {
   esac
   mkfs.ext4 -Fq "$LAYERED_DEV"
   mount -t ext4 -o noatime "$LAYERED_DEV" "$MNT"
+  if declare -F benchmark_mount_started >/dev/null; then
+    benchmark_mount_started
+  fi
   mkdir -p "$MNT/data"
   # shellcheck disable=SC2034  # consumed by run-bench.sh
   DATA="$MNT/data"

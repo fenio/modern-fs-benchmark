@@ -70,9 +70,9 @@ fi
 }
 
 setup_benchmark_filesystem() {
-fs_setup
-local -a queue_roots=("${DEVICES[@]}") configured_roots=()
-[[ -z $SPARE_DEV ]] || queue_roots+=("$SPARE_DEV")
+  fs_setup
+  local -a queue_roots=("${DEVICES[@]}") configured_roots=()
+  queue_roots+=("${SPARE_DEVICES[@]}")
 if [ -n "${BENCH_DEVICES:-}" ]; then
   read -ra configured_roots <<<"$BENCH_DEVICES"
   queue_roots+=("${configured_roots[@]}")

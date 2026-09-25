@@ -2,7 +2,7 @@ name: publish-pages
 
 on:
   workflow_run:
-    workflows: [fs-bench, fs-bench-real-hw, fs-bench-real-hw-sas-hdd, fs-bench-real-hw-sas-hdd-hybrid-tier, fs-bench-real-hw-sas-hdd-hybrid-tier-v2]
+    workflows: [fs-bench, fs-bench-real-hw, fs-bench-real-hw-sas-hdd, fs-bench-real-hw-sas-hdd-hybrid-tier, fs-bench-real-hw-sas-hdd-hybrid-tier-v2, fs-bench-real-hw-sas-hdd-three-copy]
     types: [completed]
   workflow_dispatch:
 
@@ -79,6 +79,7 @@ jobs:
             --dashboard-link 'SAS HDD=sas-hdd/' \
             --dashboard-link 'Hybrid tier v1=sas-hdd/hybrid-tier/' \
             --dashboard-link 'Hybrid tier v2=sas-hdd/hybrid-tier-v2/' \
+            --dashboard-link 'Three-copy failures=sas-hdd/three-copy/' \
             --setup-detail 'Environment=GitHub-hosted Ubuntu VM; each filesystem configuration runs in a fresh VM' \
             --setup-detail 'Devices=Four 16 GiB loop devices plus one 16 GiB rebuild spare; the ZFS-single job uses one 32 GiB loop device' \
             --setup-detail 'Storage caveat=Loop-device files share the VM ephemeral backing storage; they are not independent physical disks' \
@@ -93,7 +94,8 @@ jobs:
               --dashboard-link 'Hosted CI=../' \
               --dashboard-link 'SAS HDD=../sas-hdd/' \
               --dashboard-link 'Hybrid tier v1=../sas-hdd/hybrid-tier/' \
-              --dashboard-link 'Hybrid tier v2=../sas-hdd/hybrid-tier-v2/'
+              --dashboard-link 'Hybrid tier v2=../sas-hdd/hybrid-tier-v2/' \
+              --dashboard-link 'Three-copy failures=../sas-hdd/three-copy/'
           fi
 
       - name: Build sas-hdd dashboard
@@ -109,6 +111,7 @@ jobs:
               --dashboard-link 'Real hardware (farm3)=../real-hw/' \
               --dashboard-link 'Hybrid tier v1=hybrid-tier/' \
               --dashboard-link 'Hybrid tier v2=hybrid-tier-v2/' \
+              --dashboard-link 'Three-copy failures=three-copy/' \
               --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
               --setup-detail 'Physical media=Six independent 6 TB 7200 RPM SAS HDDs: four 16 GiB member partitions, one 16 GiB rebuild spare, and one dedicated 32 GiB ZFS-single partition' \
               --setup-detail 'Mirrored layouts=Linux md/LVM RAID10, two striped ZFS mirror pairs, Btrfs RAID1, or bcachefs replicas=2 across four member disks' \
@@ -149,6 +152,7 @@ jobs:
               --dashboard-link 'Real hardware (farm3)=../../real-hw/' \
               --dashboard-link 'SAS HDD baseline=../' \
               --dashboard-link 'Hybrid tier v2=../hybrid-tier-v2/' \
+              --dashboard-link 'Three-copy failures=../three-copy/' \
               --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
               --setup-detail 'Physical media=Eleven drives: eight SAS HDDs and three SAS SSDs' \
               --setup-detail 'Allocation=Eight 128 GiB HDD data partitions; two SSDs each provide 64 GiB durable data plus 4 GiB cache metadata; the third SSD provides a 64 GiB disposable read cache' \
@@ -191,6 +195,7 @@ jobs:
               --dashboard-link 'Real hardware (farm3)=../../real-hw/' \
               --dashboard-link 'SAS HDD baseline=../' \
               --dashboard-link 'Hybrid tier v1=../hybrid-tier/' \
+              --dashboard-link 'Three-copy failures=../three-copy/' \
               --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller' \
               --setup-detail 'Physical media=Eleven drives: eight SAS HDDs and three SAS SSDs' \
               --setup-detail 'Allocation=Eight 128 GiB HDD data partitions; all three SSDs provide 64 GiB data partitions, while the first two also retain 4 GiB dm-cache metadata partitions for Btrfs' \
@@ -199,6 +204,62 @@ jobs:
               --setup-detail 'ZFS=Four HDD mirror vdevs, a mirrored SSD metadata-only special vdev, and SSD L2ARC' \
               --setup-detail 'bcachefs=Replicated HDD background target and a three-SSD foreground, metadata, and promotion target; whole-extent promotion is disabled'
           fi
+
+      - name: Check out three-copy result history
+        id: three-copy-history
+        run: |
+          branch=results-real-hw-sas-hdd-three-copy-v1
+          set +e
+          git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch origin "$branch"
+            git worktree add three-copy-data "origin/$branch"
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+            if compgen -G "three-copy-data/runs/*/result-*.json" >/dev/null; then
+              echo 'has-results=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'has-results=false' >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "$status" -eq 2 ]; then
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo 'has-results=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "failed to query $branch (git exit $status)" >&2
+            exit "$status"
+          fi
+
+      - name: Build three-copy dashboard
+        if: steps.three-copy-history.outputs.has-results == 'true'
+        run: |
+          if compgen -G "three-copy-data/runs/*/result-*.json" >/dev/null; then
+            python3 scripts/make-dashboard.py --runs three-copy-data/runs \
+              --out site/sas-hdd/three-copy/index.html \
+              --repo "https://github.com/${{ github.repository }}" \
+              --hardware-profile sas-hdd --expected-hardware-profile sas-hdd \
+              --expected-benchmark-scenario three-copy-v1 \
+              --history-branch results-real-hw-sas-hdd-three-copy-v1 \
+              --dashboard-link 'Hosted CI=../../' \
+              --dashboard-link 'Real hardware (farm3)=../../real-hw/' \
+              --dashboard-link 'SAS HDD baseline=../' \
+              --dashboard-link 'Hybrid tier v1=../hybrid-tier/' \
+              --dashboard-link 'Hybrid tier v2=../hybrid-tier-v2/' \
+              --setup-detail 'Host=Intel Xeon E5-2640 v4 (20 threads), 251 GiB RAM, LSI SAS3008 controller and shared SAS expander' \
+              --setup-detail 'Physical media=Five independent 6 TB SAS HDDs: three 16 GiB members and two 16 GiB replacement spares' \
+              --setup-detail 'Three-copy layouts=Ext4 and XFS on three-member md RAID1, Btrfs RAID1C3, one three-way ZFS mirror, and bcachefs replicas=3' \
+              --setup-detail 'Control=Btrfs RAID1 uses two copies distributed over three devices and is expected to tolerate only one arbitrary member loss' \
+              --setup-detail 'Fault method=Each partition is exposed through dm-linear; selected mappings are atomically reloaded with the dm-error target to return hard I/O errors' \
+              --setup-detail 'Scope=Drive-level failures only; the shared controller and expander are not independent failure domains'
+          fi
+
+      - name: Build three-copy placeholder
+        if: steps.three-copy-history.outputs.has-results != 'true'
+        run: |
+          mkdir -p site/sas-hdd/three-copy
+          printf '%s\n' \
+            '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Three-copy failure campaign</title><style>body{font:16px/1.55 system-ui;max-width:720px;margin:12vh auto;padding:0 24px;color:#171717}a{color:inherit}h1{font-size:28px}</style><h1>Three-copy failure campaign</h1><p>The scenario is ready, but no validated hardware run has been published yet.</p><p><a href="https://github.com/${{ github.repository }}/blob/main/docs/sas-hdd-three-copy.md">Read the methodology</a> or <a href="../">return to the SAS HDD dashboard</a>.</p></html>' \
+            > site/sas-hdd/three-copy/index.html
 
       - uses: actions/configure-pages@v6
 

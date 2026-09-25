@@ -29,9 +29,11 @@ FAMILY_SLOT = {"ext4": 0, "xfs": 1, "zfs": 2, "btrfs": 3, "bcachefs": 4}
 ENTITY_ORDER = [
     "ext4/single",
     "ext4/md-raid10",
+    "ext4/md-raid1",
     "ext4/lvm-raid10",
     "xfs/single",
     "xfs/md-raid10",
+    "xfs/md-raid1",
     "xfs/lvm-raid10",
     "xfs/zvol",
     "xfs/lvm-raid10-int",
@@ -39,13 +41,16 @@ ENTITY_ORDER = [
     "xfs/md-raid6-int",
     "zfs/mirror",
     "zfs/mirror-8k",
+    "zfs/mirror3",
     "zfs/single",
     "zfs/raidz2",
     "zfs/raidz1",
     "btrfs/raid1",
+    "btrfs/raid1c3",
     "btrfs/single",
     "btrfs/raid6",
     "bcachefs/replicas2",
+    "bcachefs/replicas3",
     "bcachefs/single",
     "bcachefs/ec",
     "ext4/md-raid10-luks",
@@ -340,6 +345,44 @@ DOCS = {
         [("run-bench.sh (Phase 7)", "scripts/run-bench.sh"),
          ("fs_rebuild per backend", "scripts/fs"),
          ("layered_rebuild (md/lvm)", "scripts/lib/layered.sh")]),
+    "single_loss_data_intact": (
+        "Whether the prepared read file remained byte-identical while one of three "
+        "dm-linear member paths returned hard I/O errors.",
+        [("three-copy failure campaign", "scripts/lib/sas-hdd-three-copy.sh")]),
+    "post_single_rebuild_data_intact": (
+        "Whether the prepared read file remained byte-identical after replacing and fully "
+        "rebuilding the first failed member.",
+        [("three-copy failure campaign", "scripts/lib/sas-hdd-three-copy.sh")]),
+    "double_loss_mounted": (
+        "Whether the fresh failure-probe filesystem remained mounted after two of its three "
+        "member mappings were switched to dm-error.",
+        [("three-copy failure campaign", "scripts/lib/sas-hdd-three-copy.sh")]),
+    "double_loss_data_intact": (
+        "Whether the dedicated failure-probe file remained readable and byte-identical after "
+        "two member losses.",
+        [("three-copy failure campaign", "scripts/lib/sas-hdd-three-copy.sh")]),
+    "double_loss_randwrite_iops": (
+        "Random 4k write IOPS with two of three members returning hard I/O errors. Null means "
+        "the filesystem could not complete the workload.",
+        [("three-copy failure campaign", "scripts/lib/sas-hdd-three-copy.sh")]),
+    "double_loss_randread_iops": (
+        "Random 4k read IOPS with two of three members returning hard I/O errors. Null means "
+        "the filesystem could not complete the workload.",
+        [("three-copy failure campaign", "scripts/lib/sas-hdd-three-copy.sh")]),
+    "double_rebuild_s": (
+        "Wall time to replace both failed members onto two independent spares and wait for "
+        "reconstruction. The Btrfs RAID1 two-copy control does not attempt this rebuild.",
+        [("three-copy failure campaign", "scripts/lib/sas-hdd-three-copy.sh")]),
+    "post_double_rebuild_data_intact": (
+        "Whether the dedicated failure-probe file remained byte-identical after both failed "
+        "members were replaced.",
+        [("three-copy failure campaign", "scripts/lib/sas-hdd-three-copy.sh")]),
+    "post_double_scrub_s": (
+        "Duration of the full filesystem scrub/check after recovery from two member losses.",
+        [("three-copy failure campaign", "scripts/lib/sas-hdd-three-copy.sh")]),
+    "post_double_scrub_ok": (
+        "Whether the final full scrub/check completed after both replacement rebuilds.",
+        [("three-copy failure campaign", "scripts/lib/sas-hdd-three-copy.sh")]),
     "scrub_s": (
         "2G of random garbage is written directly onto one member device (behind the "
         "filesystem's back, offset 1G — python injector; uutils dd mis-seeks on dm devices). "
@@ -1552,6 +1595,20 @@ const cols = [
   {label: "scrub repaired", get: (e, r, c) => r.scrub_repaired},
   {label: "test file intact after corruption", str: true,
    get: (e, r, c) => r.data_intact == null ? null : (r.data_intact ? "yes" : "NO")},
+  ...(DATA.benchmarkScenario === "three-copy-v1" ? [
+    {label: "data intact after one loss", str: true,
+     get: (e, r, c) => r.single_loss_data_intact == null ? null : (r.single_loss_data_intact ? "yes" : "NO")},
+    {label: "data intact after one-loss rebuild", str: true,
+     get: (e, r, c) => r.post_single_rebuild_data_intact == null ? null : (r.post_single_rebuild_data_intact ? "yes" : "NO")},
+    {label: "mounted after two losses", str: true,
+     get: (e, r, c) => r.double_loss_mounted == null ? null : (r.double_loss_mounted ? "yes" : "NO")},
+    {label: "data intact after two losses", str: true,
+     get: (e, r, c) => r.double_loss_data_intact == null ? null : (r.double_loss_data_intact ? "yes" : "NO")},
+    {label: "data intact after two-loss rebuild", str: true,
+     get: (e, r, c) => r.post_double_rebuild_data_intact == null ? null : (r.post_double_rebuild_data_intact ? "yes" : "NO")},
+    {label: "final scrub completed", str: true,
+     get: (e, r, c) => r.post_double_scrub_ok == null ? null : (r.post_double_scrub_ok ? "yes" : "NO")},
+  ] : []),
   {label: "FIEMAP shows shared extents", str: true,
    get: (e, r, c) => r.reflink_fiemap_shared == null ? null : (r.reflink_fiemap_shared ? "yes" : "NO")},
   {label: "delete at 100% full", str: true,

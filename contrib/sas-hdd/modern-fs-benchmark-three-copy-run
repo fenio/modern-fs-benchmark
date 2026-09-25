@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Install as the immutable sudo entry point for sas-hdd three-copy-v1.
+set -euo pipefail
+
+readonly BENCHMARK_ROOT=/opt/modern-fs-benchmark
+LAUNCHER=$(/usr/bin/readlink -f "$0")
+readonly LAUNCHER
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+umask 022
+
+launcher_mode=$(/usr/bin/stat -c '%a' "$LAUNCHER")
+if [[ $(/usr/bin/stat -c '%u' "$LAUNCHER") -ne 0 ]] \
+  || (( (8#$launcher_mode & 8#022) != 0 )); then
+  echo "$LAUNCHER must be root-owned and not group/other-writable" >&2
+  exit 1
+fi
+[[ -d $BENCHMARK_ROOT ]] || { echo "$BENCHMARK_ROOT is not installed" >&2; exit 1; }
+mapfile -d '' -t unsafe_paths < <(
+  /usr/bin/find "$BENCHMARK_ROOT" \
+    \( -type l -o ! -user root -o -perm /022 \) -print0 -quit
+)
+if ((${#unsafe_paths[@]})); then
+  echo "$BENCHMARK_ROOT must contain no symlinks and be recursively root-owned and non-writable by group/other" >&2
+  exit 1
+fi
+cd "$BENCHMARK_ROOT"
+
+if [[ $# -lt 2 || $1 != --revision ]]; then
+  echo "usage: $0 --revision <commit> <managed-runner arguments...>" >&2
+  exit 2
+fi
+expected_revision=$2
+shift 2
+[[ $expected_revision =~ ^[0-9a-f]{40,64}$ ]] \
+  || { echo "invalid benchmark revision: $expected_revision" >&2; exit 2; }
+[[ -f REVISION ]] || { echo "$BENCHMARK_ROOT/REVISION is missing" >&2; exit 1; }
+read -r installed_revision < REVISION
+[[ $installed_revision == "$expected_revision" ]] \
+  || { echo "installed revision $installed_revision does not match $expected_revision" >&2; exit 1; }
+
+exec /usr/bin/env -i \
+  PATH="$PATH" HOME=/root USER=root LOGNAME=root LC_ALL=C \
+  MANAGED_BENCHMARK_PROFILE=sas-hdd \
+  MANAGED_BENCHMARK_SCENARIO=three-copy-v1 \
+  MANAGED_THREE_COPY_MEMBER_DEVICES="/dev/disk/by-id/wwn-0x5000c50094426153-part1 /dev/disk/by-id/wwn-0x5000c5009441febb-part1 /dev/disk/by-id/wwn-0x5000c50094426003-part1" \
+  MANAGED_THREE_COPY_SPARE_DEVICES="/dev/disk/by-id/wwn-0x5000c50094425a03-part1 /dev/disk/by-id/wwn-0x5000c50094425f93-part1" \
+  MANAGED_BENCHMARK_COMMAND="$BENCHMARK_ROOT/scripts/run-sas-hdd-three-copy.sh" \
+  MANAGED_BENCHMARK_REVISION="$installed_revision" \
+  MANAGED_RESULTS_ROOT=/var/lib/modern-fs-benchmark/results \
+  /usr/bin/bash "$BENCHMARK_ROOT/scripts/managed-sas-hdd-three-copy-runner.sh" "$@"

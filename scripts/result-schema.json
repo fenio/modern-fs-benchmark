@@ -80,6 +80,14 @@
       "btrfs/hybrid-dmcache": ["snapshots", "compression", "reflink", "snapscale"],
       "zfs/hybrid-special-l2arc": ["snapshots", "compression", "reflink", "snapscale"],
       "bcachefs/hybrid-native-3ssd": ["snapshots", "compression", "reflink", "snapscale"]
+    },
+    "three-copy-v1": {
+      "ext4/md-raid1": ["degraded", "scrub", "scrub_counts", "failure_domains", "failure_recovery"],
+      "xfs/md-raid1": ["reflink", "degraded", "scrub", "scrub_counts", "failure_domains", "failure_recovery"],
+      "btrfs/raid1c3": ["snapshots", "compression", "reflink", "degraded", "scrub", "scrub_counts", "snapscale", "failure_domains", "failure_recovery"],
+      "zfs/mirror3": ["snapshots", "compression", "reflink", "degraded", "scrub", "scrub_counts", "snapscale", "failure_domains", "failure_recovery"],
+      "bcachefs/replicas3": ["snapshots", "compression", "reflink", "degraded", "scrub", "snapscale", "failure_domains", "failure_recovery"],
+      "btrfs/raid1": ["snapshots", "compression", "reflink", "degraded", "scrub", "scrub_counts", "snapscale", "failure_domains"]
     }
   },
   "metrics": [
@@ -128,6 +136,16 @@
     {"key": "degraded_randwrite_iops", "type": "number", "label": "Degraded random write", "unit": "IOPS", "better": "higher", "display": "card", "capability": "degraded", "nullable": true, "nonnegative": true},
     {"key": "degraded_randread_iops", "type": "number", "label": "Degraded random read", "unit": "IOPS", "better": "higher", "display": "card", "capability": "degraded", "nullable": true, "nonnegative": true},
     {"key": "rebuild_s", "type": "number", "label": "Rebuild after device loss", "unit": "s", "better": "lower", "display": "card", "capability": "degraded", "nullable": true, "nonnegative": true},
+    {"key": "single_loss_data_intact", "type": "boolean", "label": "Data intact after one member loss", "unit": "", "display": "table", "capability": "failure_domains", "nullable": true, "required": false, "required_with_capability": true},
+    {"key": "post_single_rebuild_data_intact", "type": "boolean", "label": "Data intact after one-member rebuild", "unit": "", "display": "table", "capability": "failure_domains", "nullable": true, "required": false, "required_with_capability": true},
+    {"key": "double_loss_mounted", "type": "boolean", "label": "Filesystem remains mounted after two losses", "unit": "", "display": "table", "capability": "failure_domains", "nullable": true, "required": false, "required_with_capability": true},
+    {"key": "double_loss_data_intact", "type": "boolean", "label": "Data intact after two member losses", "unit": "", "display": "table", "capability": "failure_domains", "nullable": true, "required": false, "required_with_capability": true},
+    {"key": "double_loss_randwrite_iops", "type": "number", "label": "Two-loss random write", "unit": "IOPS", "better": "higher", "display": "card", "capability": "failure_recovery", "nullable": true, "nonnegative": true, "required": false, "required_with_capability": true},
+    {"key": "double_loss_randread_iops", "type": "number", "label": "Two-loss random read", "unit": "IOPS", "better": "higher", "display": "card", "capability": "failure_recovery", "nullable": true, "nonnegative": true, "required": false, "required_with_capability": true},
+    {"key": "double_rebuild_s", "type": "number", "label": "Rebuild after two member losses", "unit": "s", "better": "lower", "display": "card", "capability": "failure_recovery", "nullable": true, "nonnegative": true, "required": false, "required_with_capability": true},
+    {"key": "post_double_rebuild_data_intact", "type": "boolean", "label": "Data intact after two-member rebuild", "unit": "", "display": "table", "capability": "failure_recovery", "nullable": true, "required": false, "required_with_capability": true},
+    {"key": "post_double_scrub_s", "type": "number", "label": "Scrub after two-member rebuild", "unit": "s", "better": "lower", "display": "card", "capability": "failure_recovery", "nullable": true, "nonnegative": true, "required": false, "required_with_capability": true},
+    {"key": "post_double_scrub_ok", "type": "boolean", "label": "Final scrub completed", "unit": "", "display": "table", "capability": "failure_recovery", "nullable": true, "required": false, "required_with_capability": true},
     {"key": "scrub_s", "type": "number", "label": "Scrub after corruption", "unit": "s", "better": "lower", "display": "card", "capability": "scrub", "nullable": true, "nonnegative": true},
     {"key": "nearfull95_write_mbps", "type": "number", "label": "Write near full (95% target)", "unit": "MiB/s", "better": "higher", "display": "card", "capability": "enospc", "nullable": true, "nonnegative": true},
     {"key": "nearfull99_write_mbps", "type": "number", "label": "Write near full (99% target)", "unit": "MiB/s", "better": "higher", "display": "card", "capability": "enospc", "nullable": true, "nonnegative": true},

@@ -33,6 +33,9 @@ Btrfs cache, ZFS special/L2ARC classes, and native bcachefs targets under one
 fixed eight-HDD/three-SSD physical budget. The separate
 [`hybrid-tier-v2`](sas-hdd-hybrid-tier-v2.md) stream keeps the Btrfs and ZFS
 controls unchanged while testing a three-SSD durable bcachefs hot target.
+The separate [`three-copy-v1`](sas-hdd-three-copy.md) stream compares true
+three-copy layouts, a Btrfs two-copy control, and repeatable one- and two-member
+drive-path failures.
 
 ## Hardware
 
@@ -97,7 +100,7 @@ sudo modprobe dm_raid dm_snapshot dm_integrity zfs bcachefs
 Deploy the current `origin/main` commit as an immutable root-owned tree.
 `REVISION` is checked against `${{ github.sha }}` before every job and is
 recorded in each result as `benchmark_revision`. The deployment script prepares
-and validates the replacement before stopping the runner, installs all three
+and validates the replacement before stopping the runner, installs all four
 privileged launchers, verifies their capabilities, and restores the prior tree
 if the swap fails.
 
@@ -118,6 +121,7 @@ sudo install -o root -g root -m 0440 /dev/stdin \
 actions-runner ALL=(root) NOPASSWD: /usr/local/sbin/modern-fs-benchmark-run *
 actions-runner ALL=(root) NOPASSWD:NOSETENV: /usr/local/sbin/modern-fs-benchmark-hybrid-tier-run *
 actions-runner ALL=(root) NOPASSWD:NOSETENV: /usr/local/sbin/modern-fs-benchmark-hybrid-tier-v2-run *
+actions-runner ALL=(root) NOPASSWD:NOSETENV: /usr/local/sbin/modern-fs-benchmark-three-copy-run *
 EOF
 sudo visudo -cf /etc/sudoers.d/modern-fs-benchmark
 ```

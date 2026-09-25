@@ -28,6 +28,7 @@ LARGEDIR_FILES=${LARGEDIR_FILES:-100000}
 
 DEVICES=()
 SPARE_DEV=
+SPARE_DEVICES=()
 ALL_LOOPS=()
 LOOPS_CREATED=0
 
@@ -212,21 +213,25 @@ remove_stale_loop_integrity_mappings() {
 # Populate DEVICES[] — real devices from BENCH_DEVICES, or loop devices.
 setup_devices() {
   if [ -n "${BENCH_DEVICES:-}" ]; then
-    local -a configured_devices
+    local -a configured_devices configured_spares
     read -ra configured_devices <<< "$BENCH_DEVICES"
+    read -ra configured_spares <<< "${BENCH_SPARE_DEVICES:-${BENCH_SPARE_DEVICE:-}}"
     remove_stale_benchmark_mappings \
-      "${configured_devices[@]}" "${BENCH_SPARE_DEVICE:-}"
+      "${configured_devices[@]}" "${configured_spares[@]}"
     if [ "${FS:-}/${LAYOUT:-}" = zfs/single ] && [ -n "${BENCH_ZFS_SINGLE_DEVICE:-}" ]; then
       BENCH_DEVICES=$BENCH_ZFS_SINGLE_DEVICE
     fi
     read -ra DEVICES <<< "$BENCH_DEVICES"
-    SPARE_DEV=${BENCH_SPARE_DEVICE:-}
-    log "using real devices: ${DEVICES[*]}${SPARE_DEV:+ (spare: $SPARE_DEV)}"
-    local dev real_devices=("${DEVICES[@]}")
-    [ -z "$SPARE_DEV" ] || real_devices+=("$SPARE_DEV")
+    SPARE_DEVICES=("${configured_spares[@]}")
+    SPARE_DEV=${SPARE_DEVICES[0]:-}
+    log "using real devices: ${DEVICES[*]}${SPARE_DEVICES[*]:+ (spares: ${SPARE_DEVICES[*]})}"
+    local dev mounts real_devices=("${DEVICES[@]}")
+    real_devices+=("${SPARE_DEVICES[@]}")
     for dev in "${real_devices[@]}"; do
       [ -b "$dev" ] || die "$dev is not a block device"
-      if grep -q "^$dev " /proc/mounts || lsblk -no MOUNTPOINTS "$dev" | grep -q .; then
+      mounts=$(lsblk -nrpo MOUNTPOINTS "$dev") \
+        || die "failed to inspect mounts for $dev"
+      if [[ -n ${mounts//[[:space:]]/} ]]; then
         die "$dev (or a partition on it) is mounted — refusing"
       fi
       if [ "${BENCH_WIPE:-0}" != 1 ] && blkid -p "$dev" >/dev/null 2>&1; then
@@ -251,6 +256,7 @@ setup_devices() {
         DEVICES+=("$LOOP_DEV")
       else
         SPARE_DEV=$LOOP_DEV
+        SPARE_DEVICES=("$LOOP_DEV")
       fi
     done
     log "loop devices: ${DEVICES[*]} (spare: $SPARE_DEV)"
@@ -301,6 +307,7 @@ teardown_devices() {
 fio_json() {
   local name=$1; shift
   local out="$RESULTS_DIR/raw/$BENCH_ID-$name.json"
-  fio --output-format=json --output="$out" --name="$name" "$@" >/dev/null
+  fio --output-format=json --output="$out" --name="$name" "$@" >/dev/null \
+    || return
   echo "$out"
 }

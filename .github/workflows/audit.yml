@@ -133,3 +133,43 @@ jobs:
             --expected-configuration zfs/hybrid-special-l2arc \
             --expected-configuration bcachefs/hybrid-native-3ssd \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+  audit-sas-hdd-three-copy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fetch three-copy result history
+        id: history
+        run: |
+          branch=results-real-hw-sas-hdd-three-copy-v1
+          set +e
+          git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch origin "$branch"
+            git worktree add three-copy-data "origin/$branch"
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 2 ]; then
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "failed to query $branch (git exit $status)" >&2
+            exit "$status"
+          fi
+
+      - name: Audit three-copy results
+        if: steps.history.outputs.present == 'true'
+        run: |
+          set -o pipefail
+          python3 scripts/audit-results.py three-copy-data/runs \
+            --expected-hardware-profile sas-hdd \
+            --expected-benchmark-scenario three-copy-v1 \
+            --expected-configuration ext4/md-raid1 \
+            --expected-configuration xfs/md-raid1 \
+            --expected-configuration btrfs/raid1c3 \
+            --expected-configuration zfs/mirror3 \
+            --expected-configuration bcachefs/replicas3 \
+            --expected-configuration btrfs/raid1 \
+            | tee -a "$GITHUB_STEP_SUMMARY"

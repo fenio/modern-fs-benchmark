@@ -21,6 +21,11 @@ fs_setup() {
     raidz2*)
       vdevs=(raidz2 "${DEVICES[@]}")
       ;;
+    mirror3)
+      [[ ${#DEVICES[@]} -eq 3 ]] \
+        || die "zfs/mirror3 requires exactly three member devices"
+      vdevs=(mirror "${DEVICES[@]}")
+      ;;
     *)
       for ((i = 0; i < ${#DEVICES[@]}; i += 2)); do
         if [ -n "${DEVICES[i+1]:-}" ]; then
@@ -47,6 +52,9 @@ fs_setup() {
   esac
   zpool create -f -O mountpoint="$MNT" -O compression=off -O atime=off \
     "${extra[@]}" "$POOL" "${vdevs[@]}"
+  if declare -F benchmark_mount_started >/dev/null; then
+    benchmark_mount_started
+  fi
   zfs create "$POOL/data"
   # shellcheck disable=SC2034  # consumed by run-bench.sh
   DATA="$MNT/data"

@@ -13,6 +13,7 @@ readonly LAUNCHERS=(
   modern-fs-benchmark-run
   modern-fs-benchmark-hybrid-tier-run
   modern-fs-benchmark-hybrid-tier-v2-run
+  modern-fs-benchmark-three-copy-run
 )
 
 if (( $# > 1 )); then
@@ -42,8 +43,12 @@ deployment_complete=0
 install_launchers() {
   local source_root=$1 launcher
   for launcher in "${LAUNCHERS[@]}"; do
-    sudo install -o root -g root -m 0755 \
-      "$source_root/contrib/sas-hdd/$launcher" "$LAUNCHER_DIR/$launcher"
+    if [[ -x $source_root/contrib/sas-hdd/$launcher ]]; then
+      sudo install -o root -g root -m 0755 \
+        "$source_root/contrib/sas-hdd/$launcher" "$LAUNCHER_DIR/$launcher"
+    else
+      sudo rm -f "$LAUNCHER_DIR/$launcher"
+    fi
   done
 }
 
@@ -68,6 +73,10 @@ finish() {
     if (( old_moved )); then
       sudo mv "$BACKUP" "$TARGET"
       install_launchers "$TARGET" || true
+    else
+      for launcher in "${LAUNCHERS[@]}"; do
+        sudo rm -f "$LAUNCHER_DIR/$launcher"
+      done
     fi
   fi
   if (( service_stopped )); then
@@ -82,7 +91,9 @@ trap 'exit 143' TERM
 git -C "$repo_root" archive "$revision" | tar -x -C "$staging"
 printf '%s\n' "$revision" >"$staging/REVISION"
 for launcher in "${LAUNCHERS[@]}"; do
-  bash -n "$staging/contrib/sas-hdd/$launcher"
+  if [[ -f $staging/contrib/sas-hdd/$launcher ]]; then
+    bash -n "$staging/contrib/sas-hdd/$launcher"
+  fi
 done
 
 # Build and validate the root-owned candidate before stopping the runner.
@@ -126,6 +137,12 @@ sudo "$LAUNCHER_DIR/modern-fs-benchmark-hybrid-tier-run" \
 sudo "$LAUNCHER_DIR/modern-fs-benchmark-hybrid-tier-v2-run" \
   --revision "$revision" --capabilities \
   | grep -Fxq benchmark-scenario:hybrid-tier-v2
+sudo "$LAUNCHER_DIR/modern-fs-benchmark-three-copy-run" \
+  --revision "$revision" --capabilities \
+  | grep -Fxq benchmark-scenario:three-copy-v1
+sudo "$LAUNCHER_DIR/modern-fs-benchmark-three-copy-run" \
+  --revision "$revision" --capabilities \
+  | grep -Fxq failure-domain-dm-error-v1
 
 if (( service_stopped )); then
   runner_service start
