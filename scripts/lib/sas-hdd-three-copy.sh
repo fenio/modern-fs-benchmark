@@ -545,7 +545,7 @@ three_copy_final_scrub() {
       status=$(btrfs scrub status -R "$MNT" 2>&1) || return
       printf '%s\n%s\n' "$out" "$status" >"$log_file"
       grep -q 'Status:[[:space:]]*finished' <<<"$status" || return 1
-      grep -q 'Error summary:[[:space:]]*no errors found' <<<"$status" || return 1
+      grep -q 'Error summary:[[:space:]]*no errors found' <<<"$out" || return 1
       btrfs device stats -c "$MNT" >/dev/null 2>&1 || return
       counts='0 0'
       ;;
