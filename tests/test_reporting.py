@@ -2184,6 +2184,10 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("THREE_COPY_TOPOLOGY_ID", topology)
         self.assertIn("ZFS pool fsbench GUID does not match this run", topology)
         self.assertIn("POST_DOUBLE_SCRUB_OK=true", topology)
+        self.assertIn(
+            "grep -q 'Error summary:[[:space:]]*no errors found' <<<\"$out\"",
+            topology,
+        )
         self.assertIn("$FS == btrfs && $LAYOUT == raid1", topology)
         self.assertLess(
             runner.index("three_copy_wipe_owned_mappings"),
