@@ -120,6 +120,7 @@ three_copy_wrap_devices() {
 
 three_copy_reload_member() {
   local index=$1 target=$2 name device sectors table
+  local -a suspend_options=()
   name=${THREE_COPY_MEMBER_NAMES[index]}
   three_copy_assert_mapping_owned "$name" \
     || { log "WARNING: refusing to reload unowned mapping $name"; return 1; }
@@ -131,7 +132,11 @@ three_copy_reload_member() {
     *) log "WARNING: unknown device-mapper target: $target"; return 1 ;;
   esac
   dmsetup load "$name" --table "$table"
-  if ! dmsetup suspend "$name"; then
+  # Filesystem locking would unfreeze only after the error table is active.
+  # Btrfs treats the resulting superblock write failure as fatal instead of a
+  # live member loss, so failure injection must not freeze the filesystem.
+  [[ $target == error ]] && suspend_options=(--nolockfs)
+  if ! dmsetup suspend "${suspend_options[@]}" "$name"; then
     dmsetup clear "$name" 2>/dev/null || true
     return 1
   fi
