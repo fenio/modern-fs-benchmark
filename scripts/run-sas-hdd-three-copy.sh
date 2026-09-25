@@ -79,7 +79,7 @@ three_copy_run_phases() {
   phase_corruption_scrub
   three_copy_phase_double_loss
   phase_enospc
-  write_result
+  BENCH_DEFER_RESULT_FINALIZATION=1 write_result
   three_copy_extend_result
 }
 

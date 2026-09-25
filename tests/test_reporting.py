@@ -1416,13 +1416,33 @@ class ResultSchemaTests(unittest.TestCase):
         source = RUN_BENCH.read_text()
 
         write_result = source.index('> "$RESULT_FILE"')
+        finalize_call = source.index("  finalize_result", write_result)
+        finalize_function = source.index("finalize_result()")
         validate_result = source.index(
-            'python3 "$SCRIPT_DIR/validate-result.py" "$RESULT_FILE"'
+            'python3 "$SCRIPT_DIR/validate-result.py" "$RESULT_FILE"',
+            finalize_function,
         )
-        report_success = source.index('log "done: $RESULT_FILE"')
+        report_success = source.index('log "done: $RESULT_FILE"', finalize_function)
 
-        self.assertLess(write_result, validate_result)
+        self.assertLess(write_result, finalize_call)
         self.assertLess(validate_result, report_success)
+
+    def test_three_copy_extends_result_before_finalization(self):
+        benchmark = RUN_BENCH.read_text()
+        runner = (ROOT / "scripts" / "run-sas-hdd-three-copy.sh").read_text()
+        library = (ROOT / "scripts" / "lib" / "sas-hdd-three-copy.sh").read_text()
+
+        self.assertIn("BENCH_DEFER_RESULT_FINALIZATION=0", benchmark)
+        self.assertIn("if (( ! BENCH_DEFER_RESULT_FINALIZATION )); then", benchmark)
+        deferred_write = runner.index(
+            "BENCH_DEFER_RESULT_FINALIZATION=1 write_result"
+        )
+        extend_result = runner.index("three_copy_extend_result", deferred_write)
+        add_metrics = library.index(".results += {")
+        finalize_result = library.index("finalize_result", add_metrics)
+
+        self.assertLess(deferred_write, extend_result)
+        self.assertLess(add_metrics, finalize_result)
 
     def test_cleanup_failure_makes_successful_benchmark_fail(self):
         source = RUN_BENCH.read_text()
