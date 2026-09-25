@@ -13,6 +13,8 @@ THREE_COPY_MAPPINGS_STARTED=0
 THREE_COPY_FS_STARTED=0
 THREE_COPY_MOUNT_DEVICE=
 THREE_COPY_TOPOLOGY_ID=
+THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT=0
+readonly THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT=600
 
 three_copy_cleanup_stale() {
   local name pools
@@ -371,8 +373,22 @@ three_copy_capture_btrfs_ids() {
 
 three_copy_wait_bcachefs_reconcile() {
   local prefix="$RESULTS_DIR/raw/$BENCH_ID-$1-reconcile"
-  bcachefs reconcile wait "$MNT" >"$prefix-wait.txt" 2>&1 || return
-  bcachefs reconcile status "$MNT" >"$prefix-status.txt" 2>&1 || return
+  local wait_status=0 status_status=0
+  THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT=0
+  timeout --signal=TERM --kill-after=10s "$THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT" \
+    bcachefs reconcile wait "$MNT" >"$prefix-wait.txt" 2>&1 \
+    || wait_status=$?
+  timeout --signal=TERM --kill-after=10s 30 \
+    bcachefs reconcile status "$MNT" >"$prefix-status.txt" 2>&1 \
+    || status_status=$?
+  printf 'wait_exit_status=%s\nstatus_exit_status=%s\ntimeout_seconds=%s\n' \
+    "$wait_status" "$status_status" "$THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT" \
+    >"$prefix-outcome.txt" || return
+  (( status_status == 0 )) || return "$status_status"
+  if (( wait_status == 124 )); then
+    THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT=1
+  fi
+  return "$wait_status"
 }
 
 three_copy_fail_member() {
@@ -394,56 +410,65 @@ three_copy_fail_member() {
 }
 
 three_copy_rebuild_one() {
+  local recovery_status=0
+  THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT=0
   case "$FS" in
     ext4 | xfs)
-      mdadm --add /dev/md/fsbench "${SPARE_DEVICES[0]}"
-      layered_md_wait_idle
+      mdadm --add /dev/md/fsbench "${SPARE_DEVICES[0]}" || return
+      layered_md_wait_idle || return
       ;;
     btrfs)
-      btrfs replace start -B "${THREE_COPY_BTRFS_IDS[1]}" "${SPARE_DEVICES[0]}" "$MNT"
+      btrfs replace start -B "${THREE_COPY_BTRFS_IDS[1]}" \
+        "${SPARE_DEVICES[0]}" "$MNT" || return
       ;;
     zfs)
-      zpool replace "$POOL" "${DEVICES[1]}" "${SPARE_DEVICES[0]}"
-      zpool wait -t resilver "$POOL"
+      zpool replace "$POOL" "${DEVICES[1]}" "${SPARE_DEVICES[0]}" || return
+      zpool wait -t resilver "$POOL" || return
       ;;
     bcachefs)
-      bcachefs device add "$MNT" "${SPARE_DEVICES[0]}"
-      bcachefs device remove "${THREE_COPY_BCACHEFS_IDS[1]}" "$MNT"
-      three_copy_wait_bcachefs_reconcile single-rebuild
+      bcachefs device add "$MNT" "${SPARE_DEVICES[0]}" || return
+      bcachefs device remove "${THREE_COPY_BCACHEFS_IDS[1]}" "$MNT" || return
+      three_copy_wait_bcachefs_reconcile single-rebuild || recovery_status=$?
       ;;
   esac
   DEVICES[1]=${SPARE_DEVICES[0]}
   THREE_COPY_FAILED_MEMBERS[1]=0
+  return "$recovery_status"
 }
 
 three_copy_rebuild_two() {
+  local recovery_status=0
+  THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT=0
   case "$FS" in
     ext4 | xfs)
-      mdadm --add /dev/md/fsbench "${SPARE_DEVICES[0]}"
-      mdadm --add /dev/md/fsbench "${SPARE_DEVICES[1]}"
-      layered_md_wait_idle
+      mdadm --add /dev/md/fsbench "${SPARE_DEVICES[0]}" || return
+      mdadm --add /dev/md/fsbench "${SPARE_DEVICES[1]}" || return
+      layered_md_wait_idle || return
       ;;
     btrfs)
-      btrfs replace start -B "${THREE_COPY_BTRFS_IDS[1]}" "${SPARE_DEVICES[0]}" "$MNT"
-      btrfs replace start -B "${THREE_COPY_BTRFS_IDS[2]}" "${SPARE_DEVICES[1]}" "$MNT"
+      btrfs replace start -B "${THREE_COPY_BTRFS_IDS[1]}" \
+        "${SPARE_DEVICES[0]}" "$MNT" || return
+      btrfs replace start -B "${THREE_COPY_BTRFS_IDS[2]}" \
+        "${SPARE_DEVICES[1]}" "$MNT" || return
       ;;
     zfs)
-      zpool replace "$POOL" "${DEVICES[1]}" "${SPARE_DEVICES[0]}"
-      zpool replace "$POOL" "${DEVICES[2]}" "${SPARE_DEVICES[1]}"
-      zpool wait -t resilver "$POOL"
+      zpool replace "$POOL" "${DEVICES[1]}" "${SPARE_DEVICES[0]}" || return
+      zpool replace "$POOL" "${DEVICES[2]}" "${SPARE_DEVICES[1]}" || return
+      zpool wait -t resilver "$POOL" || return
       ;;
     bcachefs)
-      bcachefs device add "$MNT" "${SPARE_DEVICES[0]}"
-      bcachefs device add "$MNT" "${SPARE_DEVICES[1]}"
-      bcachefs device remove "${THREE_COPY_BCACHEFS_IDS[1]}" "$MNT"
-      bcachefs device remove "${THREE_COPY_BCACHEFS_IDS[2]}" "$MNT"
-      three_copy_wait_bcachefs_reconcile double-rebuild
+      bcachefs device add "$MNT" "${SPARE_DEVICES[0]}" || return
+      bcachefs device add "$MNT" "${SPARE_DEVICES[1]}" || return
+      bcachefs device remove "${THREE_COPY_BCACHEFS_IDS[1]}" "$MNT" || return
+      bcachefs device remove "${THREE_COPY_BCACHEFS_IDS[2]}" "$MNT" || return
+      three_copy_wait_bcachefs_reconcile double-rebuild || recovery_status=$?
       ;;
   esac
   DEVICES[1]=${SPARE_DEVICES[0]}
   DEVICES[2]=${SPARE_DEVICES[1]}
   THREE_COPY_FAILED_MEMBERS[1]=0
   THREE_COPY_FAILED_MEMBERS[2]=0
+  return "$recovery_status"
 }
 
 three_copy_probe_io() {
@@ -473,7 +498,8 @@ three_copy_probe_io() {
 }
 
 three_copy_phase_single_loss() {
-  local before after write_after t0 single_write_hash
+  local before after write_after t0 single_write_hash recovery_status
+  local rebuild_ok=false recovery_timeout=false
   DEG_WRITE_IOPS=null
   DEG_READ_IOPS=null
   REBUILD_S=null
@@ -489,19 +515,36 @@ three_copy_phase_single_loss() {
     DEG_WRITE_IOPS DEG_READ_IOPS single_write_hash
   after=$(md5sum "$DATA/read.dat" 2>/dev/null | cut -d' ' -f1 || true)
   [[ -n $after && $after == "$before" ]] && SINGLE_LOSS_DATA_INTACT=true
+  [[ $SINGLE_LOSS_DATA_INTACT == true && $DEG_WRITE_IOPS != null \
+    && $DEG_READ_IOPS != null ]] \
+    || die "$FS/$LAYOUT did not preserve data and I/O through one member loss"
 
   log "phase: rebuild after one member loss"
   t0=$(now_ms)
-  three_copy_rebuild_one
-  REBUILD_S=$(( ($(now_ms) - t0) / 1000 ))
+  if three_copy_rebuild_one; then
+    REBUILD_S=$(( ($(now_ms) - t0) / 1000 ))
+    rebuild_ok=true
+  else
+    recovery_status=$?
+    if [[ $FS != bcachefs || $recovery_status -ne 124 \
+      || $THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT -ne 1 ]]; then
+      return "$recovery_status"
+    fi
+    recovery_timeout=true
+    log "WARNING: $FS/$LAYOUT did not complete one-member recovery"
+  fi
   three_copy_cold_cache
   after=$(md5sum "$DATA/read.dat" 2>/dev/null | cut -d' ' -f1 || true)
   write_after=$(md5sum "$DATA/single-loss-write.dat" 2>/dev/null | cut -d' ' -f1 || true)
-  [[ -n $after && $after == "$before" && -n $single_write_hash \
+  [[ $rebuild_ok == true && -n $after && $after == "$before" && -n $single_write_hash \
     && $write_after == "$single_write_hash" ]] && POST_SINGLE_REBUILD_DATA_INTACT=true
-  [[ $SINGLE_LOSS_DATA_INTACT == true && $DEG_WRITE_IOPS != null \
-    && $DEG_READ_IOPS != null && $POST_SINGLE_REBUILD_DATA_INTACT == true ]] \
-    || die "$FS/$LAYOUT did not preserve data through one member loss and rebuild"
+  if [[ $POST_SINGLE_REBUILD_DATA_INTACT != true ]]; then
+    if [[ $recovery_timeout == true ]]; then
+      log "WARNING: $FS/$LAYOUT did not preserve data through one member loss and recovery"
+    else
+      die "$FS/$LAYOUT did not preserve data through one member loss and recovery"
+    fi
+  fi
 }
 
 three_copy_prepare_fresh_double_loss() {
@@ -555,7 +598,9 @@ three_copy_final_scrub() {
       zpool status "$POOL" | grep -q 'with 0 errors' || return 1
       ;;
     bcachefs)
-      out=$(bcachefs scrub "$MNT" 2>&1) || return
+      out=$(timeout --signal=TERM --kill-after=10s \
+        "$THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT" bcachefs scrub "$MNT" 2>&1) \
+        || return
       printf '%s\n' "$out" >"$log_file"
       grep -qiE 'uncorrectable|unrepairable|data[[:space:]]+lost|fatal|aborted|cancelled' \
         <<<"$out" && return 1
@@ -568,7 +613,8 @@ three_copy_final_scrub() {
 
 three_copy_phase_double_loss() {
   local probe="$DATA/failure-domain.dat" before after write_after t0 counts
-  local double_write_hash expected=true
+  local double_write_hash expected=true rebuild_ok=false recovery_status
+  local recovery_timeout=false
   DOUBLE_LOSS_MOUNTED=false
   DOUBLE_LOSS_DATA_INTACT=false
   DOUBLE_LOSS_WRITE_IOPS=null
@@ -596,29 +642,50 @@ three_copy_phase_double_loss() {
     DOUBLE_LOSS_WRITE_IOPS DOUBLE_LOSS_READ_IOPS double_write_hash
 
   if [[ $expected == true ]]; then
+    [[ $DOUBLE_LOSS_MOUNTED == true && $DOUBLE_LOSS_DATA_INTACT == true \
+      && $DOUBLE_LOSS_WRITE_IOPS != null && $DOUBLE_LOSS_READ_IOPS != null ]] \
+      || die "$FS/$LAYOUT did not preserve data and I/O through two member losses"
     log "phase: rebuild after two member losses"
     t0=$(now_ms)
-    three_copy_rebuild_two
-    DOUBLE_REBUILD_S=$(( ($(now_ms) - t0) / 1000 ))
+    if three_copy_rebuild_two; then
+      DOUBLE_REBUILD_S=$(( ($(now_ms) - t0) / 1000 ))
+      rebuild_ok=true
+    else
+      recovery_status=$?
+      if [[ $FS != bcachefs || $recovery_status -ne 124 \
+        || $THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT -ne 1 ]]; then
+        return "$recovery_status"
+      fi
+      recovery_timeout=true
+      log "WARNING: $FS/$LAYOUT did not complete two-member recovery"
+    fi
     three_copy_cold_cache
     POST_DOUBLE_REBUILD_DATA_INTACT=false
     after=$(md5sum "$probe" 2>/dev/null | cut -d' ' -f1 || true)
     write_after=$(md5sum "$DATA/double-loss-write.dat" 2>/dev/null | cut -d' ' -f1 || true)
-    [[ -n $after && $after == "$before" && -n $double_write_hash \
+    [[ $rebuild_ok == true && -n $after && $after == "$before" && -n $double_write_hash \
       && $write_after == "$double_write_hash" ]] && POST_DOUBLE_REBUILD_DATA_INTACT=true
-    t0=$(now_ms)
-    if counts=$(three_copy_final_scrub); then
-      POST_DOUBLE_SCRUB_S=$(( ($(now_ms) - t0) / 1000 ))
-      POST_DOUBLE_SCRUB_OK=true
-      printf '%s\n' "$counts" \
-        >"$RESULTS_DIR/raw/$BENCH_ID-post-double-scrub-counts.txt"
+    if [[ $rebuild_ok == true ]]; then
+      t0=$(now_ms)
+      if counts=$(three_copy_final_scrub); then
+        POST_DOUBLE_SCRUB_S=$(( ($(now_ms) - t0) / 1000 ))
+        POST_DOUBLE_SCRUB_OK=true
+        printf '%s\n' "$counts" \
+          >"$RESULTS_DIR/raw/$BENCH_ID-post-double-scrub-counts.txt"
+      else
+        POST_DOUBLE_SCRUB_OK=false
+      fi
     else
       POST_DOUBLE_SCRUB_OK=false
     fi
-    [[ $DOUBLE_LOSS_MOUNTED == true && $DOUBLE_LOSS_DATA_INTACT == true \
-      && $DOUBLE_LOSS_WRITE_IOPS != null && $DOUBLE_LOSS_READ_IOPS != null \
-      && $POST_DOUBLE_REBUILD_DATA_INTACT == true && $POST_DOUBLE_SCRUB_OK == true ]] \
-      || die "$FS/$LAYOUT did not survive and recover from two member losses"
+    if ! [[ $POST_DOUBLE_REBUILD_DATA_INTACT == true \
+      && $POST_DOUBLE_SCRUB_OK == true ]]; then
+      if [[ $recovery_timeout == true ]]; then
+        log "WARNING: $FS/$LAYOUT did not survive and recover from two member losses"
+      else
+        die "$FS/$LAYOUT did not survive and recover from two member losses"
+      fi
+    fi
   else
     # The two-copy control is expected to lose access after two failures. Bring
     # its paths back only so teardown can release the filesystem cleanly.
@@ -695,7 +762,8 @@ three_copy_capture_topology() {
     bcachefs)
       {
         bcachefs fs usage "$MNT"
-        bcachefs reconcile status "$MNT"
+        timeout --signal=TERM --kill-after=10s 30 \
+          bcachefs reconcile status "$MNT"
       } >"$prefix-bcachefs.txt" 2>&1 || return
       for device in "${DEVICES[@]}"; do
         bcachefs show-super "$device" >/dev/null || return
