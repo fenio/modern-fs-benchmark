@@ -2148,8 +2148,32 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("results-real-hw-sas-hdd-three-copy-v1", workflow)
         self.assertIn("needs.bench.result == 'success'", workflow)
         self.assertIn("ENABLE_SAS_HDD_THREE_COPY_BENCHMARKS", workflow)
-        self.assertIn("post_double_scrub_ok == true", workflow)
-        self.assertIn('((.fs == "btrfs" and .layout == "raid1") | not)', workflow)
+        self.assertIn(
+            '(.results.post_double_scrub_ok | type) == "boolean"', workflow
+        )
+        self.assertIn("THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT=600", topology)
+        self.assertIn("timeout --signal=TERM --kill-after=10s", topology)
+        self.assertIn("did not complete one-member recovery", topology)
+        self.assertIn("did not complete two-member recovery", topology)
+        self.assertIn("recovery_status -ne 124", topology)
+        self.assertIn("THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT", topology)
+        self.assertIn(
+            "did not preserve data and I/O through one member loss", topology
+        )
+        self.assertIn(
+            "did not preserve data and I/O through two member losses", topology
+        )
+        self.assertIn(
+            "skipping corruption because one-member recovery did not complete",
+            runner,
+        )
+        self.assertIn(
+            'die "$FS/$LAYOUT did not survive and recover from two member losses"',
+            topology,
+        )
+        self.assertIn(
+            '.fs == "bcachefs" and .layout == "replicas3"', workflow
+        )
         self.assertIn("native-two-copy-three-device-control", workflow)
         self.assertIn("cp incoming/raw/*.txt", workflow)
         self.assertIn("three-copy-bcachefs.txt", workflow)
@@ -2265,6 +2289,152 @@ class BackendConfigurationTests(unittest.TestCase):
             )
         )
 
+    def test_bcachefs_reconcile_timeout_is_bounded_and_recorded(self):
+        library = ROOT / "scripts" / "lib" / "sas-hdd-three-copy.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    r'''
+source "$1"
+RESULTS_DIR=$2
+BENCH_ID=bcachefs-replicas3
+MNT=/mnt/fsbench
+mkdir -p "$RESULTS_DIR/raw"
+timeout() {
+  while [[ $1 == --* ]]; do shift; done
+  shift
+  if [[ $MODE == wait && $1 == bcachefs && $2 == reconcile && $3 == wait ]]; then
+    return 124
+  fi
+  if [[ $MODE == status && $1 == bcachefs && $2 == reconcile && $3 == status ]]; then
+    return 124
+  fi
+  "$@"
+}
+bcachefs() {
+  [[ $1 == reconcile ]] || return 1
+  if [[ $2 == status ]]; then
+    printf 'Scan pending: 0\n'
+  fi
+}
+MODE=wait
+three_copy_wait_bcachefs_reconcile wait-timeout
+printf 'wait_status=%s\n' "$?"
+printf 'wait_timed_out=%s\n' "$THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT"
+MODE=status
+three_copy_wait_bcachefs_reconcile status-timeout
+printf 'status_status=%s\n' "$?"
+printf 'status_timed_out=%s\n' "$THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT"
+''',
+                    "bash",
+                    str(library),
+                    tmp,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            wait_outcome = (
+                Path(tmp)
+                / "raw"
+                / "bcachefs-replicas3-wait-timeout-reconcile-outcome.txt"
+            ).read_text()
+            status = (
+                Path(tmp)
+                / "raw"
+                / "bcachefs-replicas3-wait-timeout-reconcile-status.txt"
+            ).read_text()
+            status_outcome = (
+                Path(tmp)
+                / "raw"
+                / "bcachefs-replicas3-status-timeout-reconcile-outcome.txt"
+            ).read_text()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("wait_status=124", result.stdout)
+        self.assertIn("wait_timed_out=1", result.stdout)
+        self.assertIn("status_status=124", result.stdout)
+        self.assertIn("status_timed_out=0", result.stdout)
+        self.assertIn("wait_exit_status=124", wait_outcome)
+        self.assertIn("status_exit_status=0", wait_outcome)
+        self.assertIn("timeout_seconds=600", wait_outcome)
+        self.assertIn("wait_exit_status=0", status_outcome)
+        self.assertIn("status_exit_status=124", status_outcome)
+        self.assertEqual(status, "Scan pending: 0\n")
+
+    def test_three_copy_publish_filter_only_allows_bcachefs_negative_results(self):
+        workflow = THREE_COPY_WORKFLOW.read_text()
+        match = re.search(
+            r"jq -e -s .*?\n\s+'(all\(\.\[\];.*?\))' \\\n\s+incoming/result-\*\.json",
+            workflow,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        result_filter = match.group(1)
+        devices = (
+            "/dev/disk/by-id/wwn-0x5000c50094426153-part1 "
+            "/dev/disk/by-id/wwn-0x5000c5009441febb-part1 "
+            "/dev/disk/by-id/wwn-0x5000c50094426003-part1"
+        )
+        document = {
+            "hardware_profile": "sas-hdd",
+            "benchmark_scenario": "three-copy-v1",
+            "benchmark_revision": "revision",
+            "devices": devices,
+            "ndev": 3,
+            "fs": "bcachefs",
+            "layout": "replicas3",
+            "topology": "native-three-copy",
+            "results": {
+                "single_loss_data_intact": True,
+                "post_single_rebuild_data_intact": False,
+                "degraded_randwrite_iops": 10,
+                "degraded_randread_iops": 10,
+                "rebuild_s": None,
+                "double_loss_mounted": True,
+                "double_loss_data_intact": True,
+                "double_loss_randwrite_iops": 10,
+                "double_loss_randread_iops": 10,
+                "double_rebuild_s": None,
+                "post_double_rebuild_data_intact": False,
+                "post_double_scrub_s": None,
+                "post_double_scrub_ok": False,
+            },
+        }
+
+        def verify(candidate):
+            return subprocess.run(
+                [
+                    "jq",
+                    "-e",
+                    "-s",
+                    "--arg",
+                    "expected_revision",
+                    "revision",
+                    "--arg",
+                    "expected_devices",
+                    devices,
+                    result_filter,
+                ],
+                input=json.dumps(candidate),
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        bcachefs_result = verify(document)
+        document.update(
+            {"fs": "ext4", "layout": "md-raid1", "topology": "mdraid1-three-copy"}
+        )
+        ext4_result = verify(document)
+
+        self.assertEqual(bcachefs_result.returncode, 0, bcachefs_result.stderr)
+        self.assertNotEqual(ext4_result.returncode, 0)
+
     def test_three_copy_capability_metrics_are_schema_required(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
@@ -2360,7 +2530,8 @@ class BackendConfigurationTests(unittest.TestCase):
                 {
                     "hardware_profile": "sas-hdd",
                     "benchmark_scenario": "three-copy-v1",
-                    "layout": "raid1c3",
+                    "fs": "bcachefs",
+                    "layout": "replicas3",
                     "topology": "native-three-copy",
                     "devices": "/dev/member0 /dev/member1 /dev/member2",
                     "ndev": 3,
@@ -2369,18 +2540,21 @@ class BackendConfigurationTests(unittest.TestCase):
             document["results"].update(
                 {
                     "single_loss_data_intact": True,
-                    "post_single_rebuild_data_intact": True,
+                    "post_single_rebuild_data_intact": False,
                     "double_loss_mounted": True,
-                    "double_loss_data_intact": False,
+                    "double_loss_data_intact": True,
                     "double_loss_randwrite_iops": 10,
                     "double_loss_randread_iops": 10,
-                    "double_rebuild_s": 1,
-                    "post_double_rebuild_data_intact": True,
-                    "post_double_scrub_s": 1,
-                    "post_double_scrub_ok": True,
+                    "double_rebuild_s": None,
+                    "post_double_rebuild_data_intact": False,
+                    "post_double_scrub_s": None,
+                    "post_double_scrub_ok": False,
                 }
             )
-            (run_dir / "result-btrfs-raid1c3.json").write_text(json.dumps(document))
+            result_file = run_dir / "result-bcachefs-replicas3.json"
+            result_file.write_text(json.dumps(document))
+
+            validation = run_script(VALIDATOR, result_file)
 
             result = run_script(
                 AUDIT,
@@ -2389,12 +2563,17 @@ class BackendConfigurationTests(unittest.TestCase):
                 "--expected-benchmark-scenario",
                 "three-copy-v1",
                 "--expected-configuration",
-                "btrfs/raid1c3",
+                "bcachefs/replicas3",
                 tmp,
             )
 
+        self.assertEqual(validation.returncode, 0, validation.stderr)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("btrfs/raid1c3: double_loss_data_intact is not true", result.stdout)
+        self.assertIn(
+            "bcachefs/replicas3: post_single_rebuild_data_intact is not true",
+            result.stdout,
+        )
+        self.assertIn("bcachefs/replicas3.double_rebuild_s: unexpectedly null", result.stdout)
 
     def test_bcachefs_tier_placement_evidence_is_verified(self):
         def super_dump(hot_count):

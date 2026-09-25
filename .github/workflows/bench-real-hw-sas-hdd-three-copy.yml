@@ -112,10 +112,11 @@ jobs:
           test -s incoming/raw/btrfs-raid1-three-copy-btrfs.txt
           test -s incoming/raw/zfs-mirror3-three-copy-zpool.txt
           test -s incoming/raw/bcachefs-replicas3-three-copy-bcachefs.txt
-          for configuration in \
-            ext4-md-raid1 xfs-md-raid1 btrfs-raid1c3 zfs-mirror3 \
-            bcachefs-replicas3; do
-            test -s "incoming/raw/$configuration-post-double-scrub-counts.txt"
+          for result in incoming/result-*.json; do
+            configuration=$(jq -r '"\(.fs)-\(.layout)"' "$result")
+            if jq -e '.results.post_double_scrub_ok == true' "$result" >/dev/null; then
+              test -s "incoming/raw/$configuration-post-double-scrub-counts.txt"
+            fi
           done
           python3 scripts/validate-result.py --complete-set \
             --expected-hardware-profile sas-hdd \
@@ -150,9 +151,10 @@ jobs:
                  has("post_double_rebuild_data_intact") and
                  has("post_double_scrub_s") and
                  has("post_double_scrub_ok"))) and
-              .results.single_loss_data_intact == true and
-              .results.post_single_rebuild_data_intact == true and
-              (.results.rebuild_s | type) == "number" and
+              (.results.single_loss_data_intact | type) == "boolean" and
+              (.results.post_single_rebuild_data_intact | type) == "boolean" and
+              ((.results.rebuild_s == null) or
+               ((.results.rebuild_s | type) == "number")) and
               ((.fs == "ext4" and .layout == "md-raid1" and .topology == "mdraid1-three-copy") or
                (.fs == "xfs" and .layout == "md-raid1" and .topology == "mdraid1-three-copy") or
                (.fs == "btrfs" and .layout == "raid1c3" and .topology == "native-three-copy") or
@@ -160,6 +162,9 @@ jobs:
                (.fs == "bcachefs" and .layout == "replicas3" and .topology == "native-three-copy") or
                (.fs == "btrfs" and .layout == "raid1" and .topology == "native-two-copy-three-device-control")) and
               ((.fs == "btrfs" and .layout == "raid1" and
+                .results.single_loss_data_intact == true and
+                .results.post_single_rebuild_data_intact == true and
+                (.results.rebuild_s | type) == "number" and
                 (.results.double_loss_mounted | type) == "boolean" and
                 (.results.double_loss_data_intact | type) == "boolean" and
                 ((.results.double_loss_randwrite_iops == null) or
@@ -170,15 +175,33 @@ jobs:
                 .results.post_double_rebuild_data_intact == null and
                 .results.post_double_scrub_s == null and
                 .results.post_double_scrub_ok == null) or
-               (((.fs == "btrfs" and .layout == "raid1") | not) and
-                .results.double_loss_mounted == true and
-                .results.double_loss_data_intact == true and
-                 (.results.double_loss_randwrite_iops | type == "number") and
-                 (.results.double_loss_randread_iops | type == "number") and
+               (.fs == "bcachefs" and .layout == "replicas3" and
+                 .results.single_loss_data_intact == true and
+                 (.results.degraded_randwrite_iops | type) == "number" and
+                 (.results.degraded_randread_iops | type) == "number" and
+                 .results.double_loss_mounted == true and
+                 .results.double_loss_data_intact == true and
+                 (.results.double_loss_randwrite_iops | type) == "number" and
+                 (.results.double_loss_randread_iops | type) == "number" and
+                 ((.results.double_rebuild_s == null) or
+                  ((.results.double_rebuild_s | type) == "number")) and
+                 (.results.post_double_rebuild_data_intact | type) == "boolean" and
+                 ((.results.post_double_scrub_s == null) or
+                  ((.results.post_double_scrub_s | type) == "number")) and
+                 (.results.post_double_scrub_ok | type) == "boolean") or
+               (((.fs == "btrfs" and .layout == "raid1") or
+                  (.fs == "bcachefs" and .layout == "replicas3")) | not) and
+                 .results.single_loss_data_intact == true and
+                 .results.post_single_rebuild_data_intact == true and
+                 (.results.rebuild_s | type) == "number" and
+                 .results.double_loss_mounted == true and
+                 .results.double_loss_data_intact == true and
+                 (.results.double_loss_randwrite_iops | type) == "number" and
+                 (.results.double_loss_randread_iops | type) == "number" and
                  (.results.double_rebuild_s | type) == "number" and
-                .results.post_double_rebuild_data_intact == true and
+                 .results.post_double_rebuild_data_intact == true and
                  (.results.post_double_scrub_s | type) == "number" and
-                .results.post_double_scrub_ok == true)))' \
+                 .results.post_double_scrub_ok == true))' \
             incoming/result-*.json >/dev/null
 
       - name: Append results to three-copy history branch

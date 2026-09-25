@@ -73,12 +73,17 @@ After the normal healthy workload, the scenario:
 5. recreates a clean filesystem and prepares a dedicated failure-probe file;
 6. fails two members sequentially and records mount, checksum, read, and write
    outcomes;
-7. for true three-copy layouts, replaces both members, verifies the checksum,
-   and requires a final full scrub/check to complete.
+7. for true three-copy layouts, attempts to replace both members, verifies the
+   checksum, and runs a final full scrub/check when recovery completes.
 
-One-loss survival is mandatory for every row. Two-loss survival and recovery
-are mandatory for the true three-copy rows. The Btrfs RAID1 control records its
-two-loss outcome without treating loss of access as a benchmark failure.
+Bcachefs reconciliation waits are bounded so a stuck kernel worker cannot hold
+the hardware runner indefinitely. A reconciliation timeout after successful
+device removal is published as a negative recovery outcome, shown as
+`NO`/missing timing data, and raised as a hard audit anomaly. Other command,
+topology, ownership, cleanup, schema, and evidence failures still fail the job
+and suppress publication. Corruption testing is skipped when one-member
+recovery did not complete. The Btrfs RAID1 control records its two-loss outcome
+without attempting recovery.
 
 ## Scope and publication
 

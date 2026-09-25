@@ -76,7 +76,15 @@ three_copy_run_phases() {
   phase_compression
   phase_divergence
   three_copy_phase_single_loss
-  phase_corruption_scrub
+  if [[ $REBUILD_S != null ]]; then
+    phase_corruption_scrub
+  else
+    SCRUB_S=null
+    SCRUB_FOUND=null
+    SCRUB_REPAIRED=null
+    DATA_INTACT=null
+    log "phase: skipping corruption because one-member recovery did not complete"
+  fi
   three_copy_phase_double_loss
   phase_enospc
   BENCH_DEFER_RESULT_FINALIZATION=1 write_result
