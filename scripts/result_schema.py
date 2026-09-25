@@ -104,10 +104,24 @@ def validate_document(document, schema, metrics):
             if not isinstance(results, dict):
                 errors.append(f"document.{key}: expected object, got {type(results).__name__}")
                 continue
+            scenario = document.get("benchmark_scenario")
+            entity = f"{document.get('fs')}/{document.get('layout')}"
+            scenario_configurations = (
+                schema.get("scenario_configurations", {}).get(scenario, {})
+                if isinstance(scenario, str)
+                else {}
+            )
+            capabilities = set(scenario_configurations.get(entity, []))
             active_metrics = {
                 metric for metric, metric_spec in metrics.items()
                 if metric_spec.get("introduced", 1) <= version
-                and metric_spec.get("required", True)
+                and (
+                    metric_spec.get("required", True)
+                    or (
+                        metric_spec.get("required_with_capability", False)
+                        and metric_spec.get("capability") in capabilities
+                    )
+                )
             }
             missing_metrics = sorted(active_metrics - set(results))
             extra_metrics = sorted(set(results) - set(metrics))

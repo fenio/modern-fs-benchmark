@@ -182,6 +182,20 @@ def main():
             if res.get(k) is False:
                 hard.append(f"{ent}: {k} = false")
 
+        if "failure_domains" in capabilities:
+            for k in ("single_loss_data_intact", "post_single_rebuild_data_intact"):
+                if res.get(k) is not True:
+                    hard.append(f"{ent}: {k} is not true")
+        if "failure_recovery" in capabilities:
+            for k in (
+                "double_loss_mounted",
+                "double_loss_data_intact",
+                "post_double_rebuild_data_intact",
+                "post_double_scrub_ok",
+            ):
+                if res.get(k) is not True:
+                    hard.append(f"{ent}: {k} is not true")
+
         # unexpected nulls (reclaim_s null = cleaner exceeded its 300s
         # window — a legitimate outcome, warn instead of fail)
         for k, v in res.items():

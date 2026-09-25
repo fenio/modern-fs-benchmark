@@ -19,6 +19,9 @@ fs_setup() {
     # (write hole) — this is the pairing the btrfs docs recommend
     mkfs.btrfs -f -d raid6 -m raid1c3 "${DEVICES[@]}"
     mount -t btrfs -o noatime "${DEVICES[0]}" "$MNT"
+    if declare -F benchmark_mount_started >/dev/null; then
+      benchmark_mount_started
+    fi
     btrfs subvolume create "$MNT/data"
     DATA="$MNT/data"
     return 0
@@ -32,6 +35,9 @@ fs_setup() {
     mkfs.btrfs -f -d "$profile" -m "$profile" "${DEVICES[@]}"
   fi
   mount -t btrfs -o noatime "${DEVICES[0]}" "$MNT"
+  if declare -F benchmark_mount_started >/dev/null; then
+    benchmark_mount_started
+  fi
   btrfs subvolume create "$MNT/data"
   DATA="$MNT/data"
 }

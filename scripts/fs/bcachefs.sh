@@ -30,6 +30,8 @@ fs_setup() {
     # new writes replicate first, background reconcile stripes them.
     # replicas=3 tolerates two failures: the raid6-class peer.
     "${fmt[@]}" --erasure_code --replicas=3 "${DEVICES[@]}"
+  elif [ "${LAYOUT:-replicas2}" = replicas3 ]; then
+    "${fmt[@]}" --replicas=3 "${DEVICES[@]}"
   else
     "${fmt[@]}" --replicas=2 "${DEVICES[@]}"
   fi
@@ -62,6 +64,9 @@ bcachefs_mount() {
       ;;
     *) mount -t bcachefs "$devlist" "$MNT" ;;
   esac
+  if declare -F benchmark_mount_started >/dev/null; then
+    benchmark_mount_started
+  fi
 }
 
 fs_remount() {
@@ -88,6 +93,7 @@ fs_snapshot_delete_all() {
 fs_setup_compression() {
   REPLICAS=2
   [ "${LAYOUT:-replicas2}" = single ] && REPLICAS=1
+  [ "${LAYOUT:-replicas2}" = replicas3 ] && REPLICAS=3
   mkdir -p "$1"
   # renamed from "setattr" in newer bcachefs-tools
   bcachefs set-file-option --compression=zstd "$1" 2>/dev/null \

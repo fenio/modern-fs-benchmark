@@ -1,0 +1,212 @@
+name: fs-bench-real-hw-sas-hdd-three-copy
+
+on:
+  schedule:
+    # Monthly: this campaign performs repeated full-device rebuilds.
+    - cron: '17 5 1 * *'
+  workflow_dispatch:
+
+concurrency:
+  group: fs-bench-sas-hdd-storage
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_SAS_HDD_THREE_COPY_BENCHMARKS == 'true'
+    runs-on: [self-hosted, linux, x64, fs-benchmark-sas-hdd]
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - fs: ext4
+            layout: md-raid1
+          - fs: xfs
+            layout: md-raid1
+          - fs: btrfs
+            layout: raid1c3
+          - fs: zfs
+            layout: mirror3
+          - fs: bcachefs
+            layout: replicas3
+          - fs: btrfs
+            layout: raid1
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run three-copy benchmark through managed wrapper
+        run: |
+          runner=$(command -v modern-fs-benchmark-three-copy-run) || {
+            echo 'managed three-copy benchmark wrapper is not installed' >&2
+            exit 1
+          }
+          sudo "$runner" --revision "${{ github.sha }}" --capabilities \
+            | grep -qx benchmark-scenario:three-copy-v1 || {
+            echo 'managed wrapper is not assigned to three-copy-v1' >&2
+            exit 1
+          }
+          sudo "$runner" --revision "${{ github.sha }}" --capabilities \
+            | grep -qx failure-domain-dm-error-v1 || {
+            echo 'managed wrapper does not support reviewed failure injection' >&2
+            exit 1
+          }
+          sudo "$runner" --revision "${{ github.sha }}" \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "${{ matrix.fs }}" "${{ matrix.layout }}"
+          mkdir -p results
+          cp -a "/var/lib/modern-fs-benchmark/results/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/${{ matrix.fs }}-${{ matrix.layout }}/." results/
+
+      - name: Write job summary
+        if: always()
+        run: scripts/summarize.sh results/result-*.json >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sas-hdd-three-copy-results-${{ matrix.fs }}-${{ matrix.layout }}
+          path: results/
+          if-no-files-found: ignore
+          overwrite: true
+
+  publish:
+    name: Store three-copy results
+    needs: bench
+    if: ${{ needs.bench.result == 'success' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    concurrency:
+      group: results-real-hw-sas-hdd-three-copy-v1
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: sas-hdd-three-copy-results-*
+          path: incoming
+          merge-multiple: true
+
+      - name: Verify cleanup and complete result set
+        run: |
+          test -f incoming/three-copy-cleanup-ext4-md-raid1-complete
+          test -f incoming/three-copy-cleanup-xfs-md-raid1-complete
+          test -f incoming/three-copy-cleanup-btrfs-raid1c3-complete
+          test -f incoming/three-copy-cleanup-zfs-mirror3-complete
+          test -f incoming/three-copy-cleanup-bcachefs-replicas3-complete
+          test -f incoming/three-copy-cleanup-btrfs-raid1-complete
+          for configuration in \
+            ext4-md-raid1 xfs-md-raid1 btrfs-raid1c3 zfs-mirror3 \
+            bcachefs-replicas3 btrfs-raid1; do
+            test -s "incoming/raw/$configuration-three-copy-lsblk.txt"
+            test -s "incoming/raw/$configuration-three-copy-dm-table.txt"
+          done
+          test -s incoming/raw/ext4-md-raid1-three-copy-mdadm.txt
+          test -s incoming/raw/xfs-md-raid1-three-copy-mdadm.txt
+          test -s incoming/raw/btrfs-raid1c3-three-copy-btrfs.txt
+          test -s incoming/raw/btrfs-raid1-three-copy-btrfs.txt
+          test -s incoming/raw/zfs-mirror3-three-copy-zpool.txt
+          test -s incoming/raw/bcachefs-replicas3-three-copy-bcachefs.txt
+          for configuration in \
+            ext4-md-raid1 xfs-md-raid1 btrfs-raid1c3 zfs-mirror3 \
+            bcachefs-replicas3; do
+            test -s "incoming/raw/$configuration-post-double-scrub-counts.txt"
+          done
+          python3 scripts/validate-result.py --complete-set \
+            --expected-hardware-profile sas-hdd \
+            --expected-benchmark-scenario three-copy-v1 \
+            --expected-configuration ext4/md-raid1 \
+            --expected-configuration xfs/md-raid1 \
+            --expected-configuration btrfs/raid1c3 \
+            --expected-configuration zfs/mirror3 \
+            --expected-configuration bcachefs/replicas3 \
+            --expected-configuration btrfs/raid1 \
+            incoming/result-*.json
+
+      - name: Verify hardware provenance and failure results
+        run: |
+          jq -e -s --arg expected_revision "${{ github.sha }}" \
+            --arg expected_devices \
+              '/dev/disk/by-id/wwn-0x5000c50094426153-part1 /dev/disk/by-id/wwn-0x5000c5009441febb-part1 /dev/disk/by-id/wwn-0x5000c50094426003-part1' \
+            'all(.[];
+              .hardware_profile == "sas-hdd" and
+              .benchmark_scenario == "three-copy-v1" and
+              .benchmark_revision == $expected_revision and
+              .devices == $expected_devices and
+              .ndev == 3 and
+              (.results |
+                (has("single_loss_data_intact") and
+                 has("post_single_rebuild_data_intact") and
+                 has("double_loss_mounted") and
+                 has("double_loss_data_intact") and
+                 has("double_loss_randwrite_iops") and
+                 has("double_loss_randread_iops") and
+                 has("double_rebuild_s") and
+                 has("post_double_rebuild_data_intact") and
+                 has("post_double_scrub_s") and
+                 has("post_double_scrub_ok"))) and
+              .results.single_loss_data_intact == true and
+              .results.post_single_rebuild_data_intact == true and
+              (.results.rebuild_s | type) == "number" and
+              ((.fs == "ext4" and .layout == "md-raid1" and .topology == "mdraid1-three-copy") or
+               (.fs == "xfs" and .layout == "md-raid1" and .topology == "mdraid1-three-copy") or
+               (.fs == "btrfs" and .layout == "raid1c3" and .topology == "native-three-copy") or
+               (.fs == "zfs" and .layout == "mirror3" and .topology == "three-way-mirror") or
+               (.fs == "bcachefs" and .layout == "replicas3" and .topology == "native-three-copy") or
+               (.fs == "btrfs" and .layout == "raid1" and .topology == "native-two-copy-three-device-control")) and
+              ((.fs == "btrfs" and .layout == "raid1" and
+                (.results.double_loss_mounted | type) == "boolean" and
+                (.results.double_loss_data_intact | type) == "boolean" and
+                ((.results.double_loss_randwrite_iops == null) or
+                 ((.results.double_loss_randwrite_iops | type) == "number")) and
+                ((.results.double_loss_randread_iops == null) or
+                 ((.results.double_loss_randread_iops | type) == "number")) and
+                .results.double_rebuild_s == null and
+                .results.post_double_rebuild_data_intact == null and
+                .results.post_double_scrub_s == null and
+                .results.post_double_scrub_ok == null) or
+               (((.fs == "btrfs" and .layout == "raid1") | not) and
+                .results.double_loss_mounted == true and
+                .results.double_loss_data_intact == true and
+                 (.results.double_loss_randwrite_iops | type == "number") and
+                 (.results.double_loss_randread_iops | type == "number") and
+                 (.results.double_rebuild_s | type) == "number" and
+                .results.post_double_rebuild_data_intact == true and
+                 (.results.post_double_scrub_s | type) == "number" and
+                .results.post_double_scrub_ok == true)))' \
+            incoming/result-*.json >/dev/null
+
+      - name: Append results to three-copy history branch
+        run: |
+          branch=results-real-hw-sas-hdd-three-copy-v1
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set +e
+          git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            git fetch origin "$branch"
+            git worktree add three-copy-data "origin/$branch"
+            git -C three-copy-data checkout -B "$branch"
+          elif [ "$status" -eq 2 ]; then
+            git worktree add --detach three-copy-data
+            git -C three-copy-data checkout --orphan "$branch"
+            git -C three-copy-data rm -rf --quiet . || true
+          else
+            echo "failed to query $branch (git exit $status)" >&2
+            exit "$status"
+          fi
+          run_dir="three-copy-data/runs/${{ github.run_id }}"
+          mkdir -p "$run_dir/raw"
+          cp incoming/result-*.json "$run_dir/"
+          cp incoming/raw/*.txt "$run_dir/raw/"
+          cp LICENSE-DATA three-copy-data/LICENSE
+          git -C three-copy-data add LICENSE runs
+          git -C three-copy-data commit -m "three-copy-v1 results from run ${{ github.run_id }}" || echo "nothing new"
+          git -C three-copy-data push origin "$branch"

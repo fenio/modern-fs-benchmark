@@ -106,8 +106,13 @@ layered_make_dev() {
       # --assume-clean skips the initial resync, which would otherwise
       # compete with the benchmark for IO
       local level=${LAYOUT#md-raid}; level=${level%%-*}
-      mdadm --create /dev/md/fsbench --run --level="$level" \
-        --raid-devices="${#DEVICES[@]}" --assume-clean "${DEVICES[@]}"
+      local md_args=(--create /dev/md/fsbench --run --level="$level"
+        --raid-devices="${#DEVICES[@]}")
+      [[ ${BENCH_MD_INITIAL_SYNC:-0} == 1 ]] || md_args+=(--assume-clean)
+      mdadm "${md_args[@]}" "${DEVICES[@]}"
+      if [[ ${BENCH_MD_INITIAL_SYNC:-0} == 1 ]]; then
+        layered_md_wait_idle || return
+      fi
       LAYERED_DEV=/dev/md/fsbench
       ;;
     lvm-*)
@@ -310,7 +315,7 @@ layered_scrub() {
       md=$(readlink -f /dev/md/fsbench)
       md=${md##*/}
       echo check > "/sys/block/$md/md/sync_action"
-      mdadm --wait /dev/md/fsbench >&2 || true
+      layered_md_wait_idle || return
       echo "$(cat "/sys/block/$md/md/mismatch_cnt") 0"
       ;;
     lvm-*)

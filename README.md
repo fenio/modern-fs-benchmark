@@ -275,6 +275,14 @@ foreground writes, metadata, and read promotion. Its independent history and
 dashboard live at `results-real-hw-sas-hdd-hybrid-tier-v2` and
 `/sas-hdd/hybrid-tier-v2/`, preserving the v1 result for direct comparison.
 
+[`three-copy-v1`](docs/sas-hdd-three-copy.md) compares three-member md RAID1,
+Btrfs RAID1C3, a three-way ZFS mirror, and bcachefs replicas=3 under repeatable
+one- and two-member hard-I/O failures. Three-device Btrfs RAID1 is included as
+an explicitly two-copy control. Results publish independently to
+`results-real-hw-sas-hdd-three-copy-v1` and `/sas-hdd/three-copy/`; because all
+disks share one SAS controller and expander, this is drive-level rather than
+controller- or enclosure-failure-domain testing.
+
 **The plan is bigger than loop devices.** CI is the regression-tracking
 harness; the goal is to gather dedicated hardware and run the REAL tests
 there — including the tiered topologies these filesystems were built for and

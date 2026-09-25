@@ -41,6 +41,9 @@ HYBRID_TIER_WORKFLOW = (
 HYBRID_TIER_V2_WORKFLOW = (
     ROOT / ".github" / "workflows" / "bench-real-hw-sas-hdd-hybrid-tier-v2.yml"
 )
+THREE_COPY_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "bench-real-hw-sas-hdd-three-copy.yml"
+)
 RERUN_SLOW_WORKFLOW = ROOT / ".github" / "workflows" / "rerun-slow.yml"
 PAGES_WORKFLOW = ROOT / ".github" / "workflows" / "publish-pages.yml"
 BCACHEFS_REPRO_WORKFLOW = (
@@ -117,6 +120,27 @@ HARDWARE_METRIC_CONTRACT = [
     ("randread8_iops", "Random read, 8 workers", "IOPS", "higher"),
     ("randread16_iops", "Random read, 16 workers", "IOPS", "higher"),
 ]
+
+FAILURE_DOMAIN_CARD_METRIC_CONTRACT = [
+    ("double_loss_randwrite_iops", "Two-loss random write", "IOPS", "higher"),
+    ("double_loss_randread_iops", "Two-loss random read", "IOPS", "higher"),
+    ("double_rebuild_s", "Rebuild after two member losses", "s", "lower"),
+    ("post_double_scrub_s", "Scrub after two-member rebuild", "s", "lower"),
+]
+FAILURE_DOMAIN_METRICS = {
+    "single_loss_data_intact",
+    "post_single_rebuild_data_intact",
+    "double_loss_mounted",
+    "double_loss_data_intact",
+}
+FAILURE_RECOVERY_METRICS = {
+    "double_loss_randwrite_iops",
+    "double_loss_randread_iops",
+    "double_rebuild_s",
+    "post_double_rebuild_data_intact",
+    "post_double_scrub_s",
+    "post_double_scrub_ok",
+}
 
 
 def run_script(script, *args):
@@ -780,6 +804,19 @@ class ResultSchemaTests(unittest.TestCase):
     def test_manifest_preserves_dashboard_metric_contract(self):
         schema = json.loads(SCHEMA.read_text())
         metrics = schema["metrics"]
+        expected_cards = (
+            METRIC_CONTRACT[:3]
+            + HARDWARE_METRIC_CONTRACT[:5]
+            + METRIC_CONTRACT[3:7]
+            + HARDWARE_METRIC_CONTRACT[5:]
+            + METRIC_CONTRACT[7:]
+        )
+        failure_index = next(
+            index
+            for index, metric in enumerate(expected_cards)
+            if metric[0] == "rebuild_s"
+        ) + 1
+        expected_cards[failure_index:failure_index] = FAILURE_DOMAIN_CARD_METRIC_CONTRACT
 
         self.assertEqual(schema["schema_version"], 6)
         self.assertEqual(
@@ -788,11 +825,7 @@ class ResultSchemaTests(unittest.TestCase):
                 for metric in metrics
                 if metric["display"] == "card"
             ],
-            METRIC_CONTRACT[:3]
-            + HARDWARE_METRIC_CONTRACT[:5]
-            + METRIC_CONTRACT[3:7]
-            + HARDWARE_METRIC_CONTRACT[5:]
-            + METRIC_CONTRACT[7:],
+            expected_cards,
         )
         self.assertEqual(len({metric["key"] for metric in metrics}), len(metrics))
         optional = {
@@ -800,7 +833,12 @@ class ResultSchemaTests(unittest.TestCase):
             for metric in metrics
             if not metric.get("required", True)
         }
-        self.assertEqual(optional, {metric[0] for metric in HARDWARE_METRIC_CONTRACT})
+        self.assertEqual(
+            optional,
+            {metric[0] for metric in HARDWARE_METRIC_CONTRACT}
+            | FAILURE_DOMAIN_METRICS
+            | FAILURE_RECOVERY_METRICS,
+        )
         dashboard = DASHBOARD.read_text()
         score_model = dashboard[
             dashboard.index("const SCORE_MODEL") : dashboard.index("const scoreMetric")
@@ -948,14 +986,20 @@ class ResultSchemaTests(unittest.TestCase):
             for metric in schema["metrics"]
             if "capability" in metric
         }
+        configuration_sets = list(schema["configurations"].values())
+        configuration_sets += [
+            capabilities
+            for scenario in schema["scenario_configurations"].values()
+            for capabilities in scenario.values()
+        ]
         configured_capabilities = {
             capability
-            for capabilities in schema["configurations"].values()
+            for capabilities in configuration_sets
             for capability in capabilities
         }
 
         self.assertEqual(configured_capabilities, metric_capabilities)
-        for capabilities in schema["configurations"].values():
+        for capabilities in configuration_sets:
             self.assertEqual(len(capabilities), len(set(capabilities)))
 
     def test_all_representative_results_validate(self):
@@ -1065,6 +1109,23 @@ class ResultSchemaTests(unittest.TestCase):
             "benchmark_scenario must be 'other', got 'hybrid-isolated'",
             rejected.stderr,
         )
+
+    def test_malformed_benchmark_scenario_reports_a_schema_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result_file = Path(tmp) / "result.json"
+            document = json.loads(
+                (FIXTURE_RUNS / "101" / "result-btrfs-raid1.json").read_text()
+            )
+            document["benchmark_scenario"] = ["three-copy-v1"]
+            result_file.write_text(json.dumps(document))
+
+            result = run_script(VALIDATOR, result_file)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "document.benchmark_scenario: expected string, got list", result.stderr
+        )
+        self.assertNotIn("Traceback", result.stderr)
 
     def test_explicit_three_configuration_complete_set(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1185,6 +1246,7 @@ class ResultSchemaTests(unittest.TestCase):
         self.assertIn("site/sas-hdd/index.html", pages)
         self.assertIn("site/sas-hdd/hybrid-tier/index.html", pages)
         self.assertIn("site/sas-hdd/hybrid-tier-v2/index.html", pages)
+        self.assertIn("site/sas-hdd/three-copy/index.html", pages)
         self.assertNotIn("site/real-hw/sas-hdd/index.html", pages)
         self.assertIn("id: sas-hdd-history", pages)
         self.assertIn(
@@ -1222,6 +1284,7 @@ class ResultSchemaTests(unittest.TestCase):
             SAS_HDD_BENCH_WORKFLOW,
             HYBRID_TIER_WORKFLOW,
             HYBRID_TIER_V2_WORKFLOW,
+            THREE_COPY_WORKFLOW,
         ):
             workflow = workflow_path.read_text()
             upload = workflow.index("uses: actions/upload-artifact@v7")
@@ -1805,6 +1868,7 @@ class BackendConfigurationTests(unittest.TestCase):
         for path in (
             MANAGED_HARDWARE_RUNNER,
             ROOT / "scripts" / "managed-sas-hdd-hybrid-tier-runner.sh",
+            ROOT / "scripts" / "managed-sas-hdd-three-copy-runner.sh",
         ):
             runner = path.read_text()
             self.assertIn("flock -w 3600 9", runner)
@@ -1845,6 +1909,7 @@ class BackendConfigurationTests(unittest.TestCase):
             "modern-fs-benchmark-run",
             "modern-fs-benchmark-hybrid-tier-run",
             "modern-fs-benchmark-hybrid-tier-v2-run",
+            "modern-fs-benchmark-three-copy-run",
         ):
             self.assertIn(installed_launcher, deployer)
         syntax = subprocess.run(
@@ -2027,6 +2092,265 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertNotIn("$GITHUB", launcher)
         self.assertIn("site/sas-hdd/hybrid-tier-v2/index.html", pages)
         self.assertIn("--expected-benchmark-scenario hybrid-tier-v2", pages)
+
+    def test_three_copy_scenario_has_explicit_failure_domain_contract(self):
+        workflow = THREE_COPY_WORKFLOW.read_text()
+        runner = (ROOT / "scripts" / "run-sas-hdd-three-copy.sh").read_text()
+        topology = (ROOT / "scripts" / "lib" / "sas-hdd-three-copy.sh").read_text()
+        managed = (
+            ROOT / "scripts" / "managed-sas-hdd-three-copy-runner.sh"
+        ).read_text()
+        launcher = (
+            ROOT / "contrib" / "sas-hdd" / "modern-fs-benchmark-three-copy-run"
+        ).read_text()
+        pages = PAGES_WORKFLOW.read_text()
+        zfs = ZFS_BACKEND.read_text()
+        bcachefs = BCACHEFS_BACKEND.read_text()
+        layered = (ROOT / "scripts" / "lib" / "layered.sh").read_text()
+
+        configurations = re.findall(
+            r"^\s+- fs: (\S+)\n\s+layout: (\S+)", workflow, re.MULTILINE
+        )
+        self.assertEqual(
+            configurations,
+            [
+                ("ext4", "md-raid1"),
+                ("xfs", "md-raid1"),
+                ("btrfs", "raid1c3"),
+                ("zfs", "mirror3"),
+                ("bcachefs", "replicas3"),
+                ("btrfs", "raid1"),
+            ],
+        )
+        self.assertIn("group: fs-bench-sas-hdd-storage", workflow)
+        self.assertIn("benchmark-scenario:three-copy-v1", workflow)
+        self.assertIn("failure-domain-dm-error-v1", workflow)
+        self.assertIn("results-real-hw-sas-hdd-three-copy-v1", workflow)
+        self.assertIn("needs.bench.result == 'success'", workflow)
+        self.assertIn("ENABLE_SAS_HDD_THREE_COPY_BENCHMARKS", workflow)
+        self.assertIn("post_double_scrub_ok == true", workflow)
+        self.assertIn('((.fs == "btrfs" and .layout == "raid1") | not)', workflow)
+        self.assertIn("native-two-copy-three-device-control", workflow)
+        self.assertIn("cp incoming/raw/*.txt", workflow)
+        self.assertIn("three-copy-bcachefs.txt", workflow)
+        self.assertIn("post-double-scrub-counts.txt", workflow)
+
+        self.assertLess(
+            runner.index("trap three_copy_on_exit"),
+            runner.index("three_copy_cleanup_stale"),
+        )
+        self.assertIn("three_copy_phase_single_loss", runner)
+        self.assertIn("three_copy_phase_double_loss", runner)
+        self.assertIn('dmsetup load "$name" --table "$table"', topology)
+        self.assertIn('table="0 $sectors error"', topology)
+        self.assertIn("fsbench-three-copy-v1-$name", topology)
+        self.assertIn("three_copy_assert_topology_owned", topology)
+        self.assertIn("three_copy_assert_detached", topology)
+        self.assertIn("three_copy_rebuild_one", topology)
+        self.assertIn("three_copy_rebuild_two", topology)
+        self.assertIn("bcachefs device remove", topology)
+        self.assertIn('bcachefs reconcile wait "$MNT"', topology)
+        self.assertIn('bcachefs reconcile status "$MNT"', topology)
+        self.assertIn("three_copy_wipe_owned_mappings", topology)
+        self.assertIn("three_copy_assert_mapping_owned", topology)
+        self.assertIn("THREE_COPY_TOPOLOGY_ID", topology)
+        self.assertIn("ZFS pool fsbench GUID does not match this run", topology)
+        self.assertIn("POST_DOUBLE_SCRUB_OK=true", topology)
+        self.assertIn("$FS == btrfs && $LAYOUT == raid1", topology)
+
+        self.assertIn("mirror3)", zfs)
+        self.assertIn('vdevs=(mirror "${DEVICES[@]}")', zfs)
+        self.assertIn('= replicas3 ]', bcachefs)
+        self.assertIn('--replicas=3 "${DEVICES[@]}"', bcachefs)
+        self.assertIn("BENCH_MD_INITIAL_SYNC", layered)
+
+        self.assertIn("exactly three member roles are required", managed)
+        self.assertIn("exactly two spare roles are required", managed)
+        self.assertIn("BENCH_SPARE_DEVICES", managed)
+        self.assertIn("BENCH_MD_INITIAL_SYNC=1", managed)
+        self.assertIn("MANAGED_BENCHMARK_SCENARIO=three-copy-v1", launcher)
+        self.assertIn("/usr/bin/env -i", launcher)
+        self.assertNotIn("$GITHUB", launcher)
+        self.assertIn("site/sas-hdd/three-copy/index.html", pages)
+        self.assertIn("--expected-benchmark-scenario three-copy-v1", pages)
+        self.assertIn("shared controller and expander", pages)
+        self.assertIn("Build three-copy placeholder", pages)
+        self.assertIn("has-results=false", pages)
+        self.assertIn("outputs.has-results == 'true'", pages)
+        dashboard = (ROOT / "scripts" / "make-dashboard.py").read_text()
+        self.assertIn("data intact after one loss", dashboard)
+        self.assertIn("final scrub completed", dashboard)
+
+        schema = json.loads(SCHEMA.read_text())
+        scenario = schema["scenario_configurations"]["three-copy-v1"]
+        self.assertEqual(
+            list(scenario), [f"{fs}/{layout}" for fs, layout in configurations]
+        )
+        self.assertTrue(
+            all("failure_domains" in capabilities for capabilities in scenario.values())
+        )
+        self.assertTrue(
+            all(
+                "failure_recovery" in capabilities
+                for entity, capabilities in scenario.items()
+                if entity != "btrfs/raid1"
+            )
+        )
+        self.assertNotIn("failure_recovery", scenario["btrfs/raid1"])
+        self.assertEqual(
+            {
+                metric["key"]
+                for metric in schema["metrics"]
+                if metric.get("capability") == "failure_domains"
+            },
+            FAILURE_DOMAIN_METRICS,
+        )
+        self.assertEqual(
+            {
+                metric["key"]
+                for metric in schema["metrics"]
+                if metric.get("capability") == "failure_recovery"
+            },
+            FAILURE_RECOVERY_METRICS,
+        )
+        self.assertTrue(
+            all(
+                metric.get("required_with_capability") is True
+                for metric in schema["metrics"]
+                if metric["key"] in FAILURE_DOMAIN_METRICS | FAILURE_RECOVERY_METRICS
+            )
+        )
+
+    def test_three_copy_capability_metrics_are_schema_required(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            document = json.loads(
+                (FIXTURE_RUNS / "101" / "result-btrfs-raid1.json").read_text()
+            )
+            document.update(
+                {
+                    "benchmark_scenario": "three-copy-v1",
+                    "hardware_profile": "sas-hdd",
+                }
+            )
+            control = tmp / "control.json"
+            control.write_text(json.dumps(document))
+            missing_domains = run_script(VALIDATOR, control)
+
+            document["results"].update(
+                {
+                    "single_loss_data_intact": True,
+                    "post_single_rebuild_data_intact": True,
+                    "double_loss_mounted": False,
+                    "double_loss_data_intact": False,
+                }
+            )
+            control.write_text(json.dumps(document))
+            valid_control = run_script(VALIDATOR, control)
+
+            document["layout"] = "raid1c3"
+            true_three_copy = tmp / "raid1c3.json"
+            true_three_copy.write_text(json.dumps(document))
+            missing_recovery = run_script(VALIDATOR, true_three_copy)
+
+        self.assertEqual(missing_domains.returncode, 1)
+        self.assertIn("single_loss_data_intact", missing_domains.stderr)
+        self.assertEqual(valid_control.returncode, 0, valid_control.stderr)
+        self.assertEqual(missing_recovery.returncode, 1)
+        self.assertIn("post_double_scrub_ok", missing_recovery.stderr)
+
+    def test_three_copy_control_recovery_nulls_are_expected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "100"
+            run_dir.mkdir()
+            document = json.loads(
+                (FIXTURE_RUNS / "101" / "result-btrfs-raid1.json").read_text()
+            )
+            document.update(
+                {
+                    "hardware_profile": "sas-hdd",
+                    "benchmark_scenario": "three-copy-v1",
+                    "topology": "native-two-copy-three-device-control",
+                    "devices": "/dev/disk/by-id/member0 /dev/disk/by-id/member1 /dev/disk/by-id/member2",
+                    "ndev": 3,
+                }
+            )
+            document["results"].update(
+                {
+                    "single_loss_data_intact": True,
+                    "post_single_rebuild_data_intact": True,
+                    "double_loss_mounted": False,
+                    "double_loss_data_intact": False,
+                    "double_loss_randwrite_iops": None,
+                    "double_loss_randread_iops": None,
+                    "double_rebuild_s": None,
+                    "post_double_rebuild_data_intact": None,
+                    "post_double_scrub_s": None,
+                    "post_double_scrub_ok": None,
+                }
+            )
+            (run_dir / "result-btrfs-raid1.json").write_text(json.dumps(document))
+
+            result = run_script(
+                AUDIT,
+                "--expected-hardware-profile",
+                "sas-hdd",
+                "--expected-benchmark-scenario",
+                "three-copy-v1",
+                "--expected-configuration",
+                "btrfs/raid1",
+                tmp,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("unexpectedly null", result.stdout)
+
+    def test_three_copy_failed_recovery_is_a_hard_anomaly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "100"
+            run_dir.mkdir()
+            document = json.loads(
+                (FIXTURE_RUNS / "101" / "result-btrfs-raid1.json").read_text()
+            )
+            document.update(
+                {
+                    "hardware_profile": "sas-hdd",
+                    "benchmark_scenario": "three-copy-v1",
+                    "layout": "raid1c3",
+                    "topology": "native-three-copy",
+                    "devices": "/dev/member0 /dev/member1 /dev/member2",
+                    "ndev": 3,
+                }
+            )
+            document["results"].update(
+                {
+                    "single_loss_data_intact": True,
+                    "post_single_rebuild_data_intact": True,
+                    "double_loss_mounted": True,
+                    "double_loss_data_intact": False,
+                    "double_loss_randwrite_iops": 10,
+                    "double_loss_randread_iops": 10,
+                    "double_rebuild_s": 1,
+                    "post_double_rebuild_data_intact": True,
+                    "post_double_scrub_s": 1,
+                    "post_double_scrub_ok": True,
+                }
+            )
+            (run_dir / "result-btrfs-raid1c3.json").write_text(json.dumps(document))
+
+            result = run_script(
+                AUDIT,
+                "--expected-hardware-profile",
+                "sas-hdd",
+                "--expected-benchmark-scenario",
+                "three-copy-v1",
+                "--expected-configuration",
+                "btrfs/raid1c3",
+                tmp,
+            )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("btrfs/raid1c3: double_loss_data_intact is not true", result.stdout)
 
     def test_bcachefs_tier_placement_evidence_is_verified(self):
         def super_dump(hot_count):
