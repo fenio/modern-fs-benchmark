@@ -2163,6 +2163,12 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("three_copy_phase_double_loss", runner)
         self.assertIn('dmsetup load "$name" --table "$table"', topology)
         self.assertIn('table="0 $sectors error"', topology)
+        self.assertIn(
+            '[[ $target == error ]] && suspend_options=(--nolockfs)', topology
+        )
+        self.assertIn(
+            'dmsetup suspend "${suspend_options[@]}" "$name"', topology
+        )
         self.assertIn("fsbench-three-copy-v1-$name", topology)
         self.assertIn("three_copy_assert_topology_owned", topology)
         self.assertIn("three_copy_assert_detached", topology)
