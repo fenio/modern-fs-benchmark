@@ -15,6 +15,7 @@ three_copy_on_exit() {
   local status=$? cleanup_status=0 teardown_safe=1
   trap - EXIT INT TERM
   set +e
+  three_copy_stop_bcachefs_wait
   if [[ $THREE_COPY_COMPLETED -eq 1 ]]; then
     three_copy_capture_topology || cleanup_status=1
   fi
