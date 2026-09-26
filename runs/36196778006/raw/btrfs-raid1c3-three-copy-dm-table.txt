@@ -1,0 +1,5 @@
+fsbench-fd-member0: 0 33554432 linear 8:177 0
+fsbench-fd-member1: 0 33554432 error 
+fsbench-fd-member2: 0 33554432 error 
+fsbench-fd-spare0: 0 33554432 linear 8:81 0
+fsbench-fd-spare1: 0 33554432 linear 65:81 0

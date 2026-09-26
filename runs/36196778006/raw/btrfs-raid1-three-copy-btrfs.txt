@@ -1,0 +1,20 @@
+Label: none  uuid: 265f9150-0f62-4f5a-b594-8547712218b6
+	Total devices 3 FS bytes used 2.25GiB
+	devid    1 size 16.00GiB used 4.00GiB path /dev/mapper/fsbench-fd-member0
+	devid    2 size 16.00GiB used 3.26GiB path /dev/mapper/fsbench-fd-member1
+	devid    3 size 16.00GiB used 3.26GiB path /dev/mapper/fsbench-fd-member2
+[/dev/mapper/fsbench-fd-member0].write_io_errs    0
+[/dev/mapper/fsbench-fd-member0].read_io_errs     0
+[/dev/mapper/fsbench-fd-member0].flush_io_errs    0
+[/dev/mapper/fsbench-fd-member0].corruption_errs  0
+[/dev/mapper/fsbench-fd-member0].generation_errs  0
+[/dev/mapper/fsbench-fd-member1].write_io_errs    1
+[/dev/mapper/fsbench-fd-member1].read_io_errs     4
+[/dev/mapper/fsbench-fd-member1].flush_io_errs    0
+[/dev/mapper/fsbench-fd-member1].corruption_errs  0
+[/dev/mapper/fsbench-fd-member1].generation_errs  0
+[/dev/mapper/fsbench-fd-member2].write_io_errs    1
+[/dev/mapper/fsbench-fd-member2].read_io_errs     4
+[/dev/mapper/fsbench-fd-member2].flush_io_errs    0
+[/dev/mapper/fsbench-fd-member2].corruption_errs  0
+[/dev/mapper/fsbench-fd-member2].generation_errs  0

@@ -1,0 +1,46 @@
+Filesystem: a6ac860b-723c-4fd8-b999-48e61225f4cb
+Size:             47001203200  
+Used:              7490402304  
+Online reserved:            0  
+
+
+     undegraded                   -1x  
+2x:     4718592  
+3x:  6698434560  18446744073702473728  
+
+reserved:  260702208  
+
+
+Pending reconcile:  data              metadata  
+replicas:              0  18446744073707192320  
+high_priority:         0  18446744073707192320  
+
+
+Device label            Device  State         Size        Used  Use%  
+(no label) (device 0):  dm-0    rw     17042501632  2232811520   13%  
+(no label) (device 3):  dm-3    rw     17042501632  2232811520   13%  
+(no label) (device 4):  dm-4    rw     17042501632  2232811520   13%  
+
+Scan pending:     0
+                  data  metadata  
+  replicas:          0     16.0E  
+  checksum:          0         0  
+  erasure_code:      0         0  
+  compression:       0         0  
+  target:            0         0  
+  high_priority:     0     16.0E  
+  pending:           0         0  
+  stripes:           0         0  
+
+
+processing normal phys: POS_MIN
+
+Reconcile thread backtrace:
+  [<0>] __bch2_closure_sync_timeout+0x3c/0xca0 [bcachefs]
+  [<0>] bch2_closure_sync_unbounded+0x2a/0x50 [bcachefs]
+  [<0>] do_reconcile+0x8d9/0x1080 [bcachefs]
+  [<0>] bch2_reconcile_thread+0xfc/0x130 [bcachefs]
+  [<0>] kthread+0xe3/0x120
+  [<0>] ret_from_fork+0x2b2/0x340
+  [<0>] ret_from_fork_asm+0x1a/0x30
+
