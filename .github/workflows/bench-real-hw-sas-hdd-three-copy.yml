@@ -5,6 +5,12 @@ on:
     # Monthly: this campaign performs repeated full-device rebuilds.
     - cron: '17 5 1 * *'
   workflow_dispatch:
+    inputs:
+      bcachefs_only:
+        description: Run only the bcachefs diagnostic row without publishing
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: fs-bench-sas-hdd-storage
@@ -37,8 +43,10 @@ jobs:
             layout: raid1
     steps:
       - uses: actions/checkout@v7
+        if: ${{ inputs.bcachefs_only != true || (matrix.fs == 'bcachefs' && matrix.layout == 'replicas3') }}
 
       - name: Run three-copy benchmark through managed wrapper
+        if: ${{ inputs.bcachefs_only != true || (matrix.fs == 'bcachefs' && matrix.layout == 'replicas3') }}
         run: |
           runner=$(command -v modern-fs-benchmark-three-copy-run) || {
             echo 'managed three-copy benchmark wrapper is not installed' >&2
@@ -54,18 +62,33 @@ jobs:
             echo 'managed wrapper does not support reviewed failure injection' >&2
             exit 1
           }
+          status=0
+          diagnostic_args=()
+          if [[ '${{ inputs.bcachefs_only }}' == true ]]; then
+            diagnostic_args+=(--diagnostics)
+          fi
           sudo "$runner" --revision "${{ github.sha }}" \
             "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
-            "${{ matrix.fs }}" "${{ matrix.layout }}"
-          mkdir -p results
-          cp -a "/var/lib/modern-fs-benchmark/results/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/${{ matrix.fs }}-${{ matrix.layout }}/." results/
+            "${{ matrix.fs }}" "${{ matrix.layout }}" \
+            "${diagnostic_args[@]}" || status=$?
+          source_dir="/var/lib/modern-fs-benchmark/results/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/${{ matrix.fs }}-${{ matrix.layout }}"
+          if ! mkdir -p results; then
+            echo 'failed to create local results staging directory' >&2
+            (( status != 0 )) || status=1
+          elif [[ -d $source_dir ]]; then
+            if ! cp -a "$source_dir/." results/; then
+              echo "failed to stage benchmark results from $source_dir" >&2
+              (( status != 0 )) || status=1
+            fi
+          fi
+          exit "$status"
 
       - name: Write job summary
-        if: always()
+        if: ${{ always() && (inputs.bcachefs_only != true || (matrix.fs == 'bcachefs' && matrix.layout == 'replicas3')) }}
         run: scripts/summarize.sh results/result-*.json >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Upload results
-        if: always()
+        if: ${{ always() && (inputs.bcachefs_only != true || (matrix.fs == 'bcachefs' && matrix.layout == 'replicas3')) }}
         uses: actions/upload-artifact@v7
         with:
           name: sas-hdd-three-copy-results-${{ matrix.fs }}-${{ matrix.layout }}
@@ -76,7 +99,7 @@ jobs:
   publish:
     name: Store three-copy results
     needs: bench
-    if: ${{ needs.bench.result == 'success' && github.ref == 'refs/heads/main' }}
+    if: ${{ needs.bench.result == 'success' && github.ref == 'refs/heads/main' && inputs.bcachefs_only != true }}
     runs-on: ubuntu-26.04
     permissions:
       contents: write

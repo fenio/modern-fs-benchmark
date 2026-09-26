@@ -2152,11 +2152,22 @@ class BackendConfigurationTests(unittest.TestCase):
             '(.results.post_double_scrub_ok | type) == "boolean"', workflow
         )
         self.assertIn("THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT=600", topology)
+        self.assertIn("THREE_COPY_BCACHEFS_DIAGNOSTICS", topology)
         self.assertIn("timeout --signal=TERM --kill-after=10s", topology)
+        self.assertIn("three_copy_capture_bcachefs_reconcile_diagnostics", topology)
+        diagnostics = (
+            ROOT / "scripts" / "capture-bcachefs-reconcile-diagnostics.sh"
+        ).read_text()
+        self.assertIn("/proc/sysrq-trigger", diagnostics)
+        self.assertIn("dmesg --time-format iso", diagnostics)
+        self.assertIn("journalctl -k", diagnostics)
+        self.assertIn("/proc/diskstats", diagnostics)
+        self.assertIn("--kill-after=", diagnostics)
         self.assertIn("did not complete one-member recovery", topology)
         self.assertIn("did not complete two-member recovery", topology)
         self.assertIn("recovery_status -ne 124", topology)
         self.assertIn("THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT", topology)
+        self.assertIn("three_copy_stop_bcachefs_wait", runner)
         self.assertIn(
             "did not preserve data and I/O through one member loss", topology
         )
@@ -2178,6 +2189,12 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("cp incoming/raw/*.txt", workflow)
         self.assertIn("three-copy-bcachefs.txt", workflow)
         self.assertIn("post-double-scrub-counts.txt", workflow)
+        self.assertIn("bcachefs_only:", workflow)
+        self.assertIn("inputs.bcachefs_only != true", workflow)
+        self.assertIn("diagnostic_args+=(--diagnostics)", workflow)
+        self.assertIn('status=0', workflow)
+        self.assertIn('exit "$status"', workflow)
+        self.assertLess(workflow.index('cp -a "$source_dir/."'), workflow.index('exit "$status"'))
 
         self.assertLess(
             runner.index("trap three_copy_on_exit"),
@@ -2236,6 +2253,8 @@ class BackendConfigurationTests(unittest.TestCase):
         self.assertIn("exactly two spare roles are required", managed)
         self.assertIn("BENCH_SPARE_DEVICES", managed)
         self.assertIn("BENCH_MD_INITIAL_SYNC=1", managed)
+        self.assertIn("diagnostics are supported only for bcachefs/replicas3", managed)
+        self.assertIn("THREE_COPY_BCACHEFS_DIAGNOSTICS", managed)
         self.assertIn("MANAGED_BENCHMARK_SCENARIO=three-copy-v1", launcher)
         self.assertIn("/usr/bin/env -i", launcher)
         self.assertNotIn("$GITHUB", launcher)

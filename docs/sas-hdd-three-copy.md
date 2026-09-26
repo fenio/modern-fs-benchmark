@@ -85,6 +85,13 @@ and suppress publication. Corruption testing is skipped when one-member
 recovery did not complete. The Btrfs RAID1 control records its two-loss outcome
 without attempting recovery.
 
+While a bcachefs reconciliation wait is active, the root-owned runner captures
+status, process and thread stacks, block counters, device-mapper state, kernel
+logs, and SysRq blocked/all-task dumps at bounded intervals. A manual workflow
+dispatch may select `bcachefs_only` to collect this evidence without running or
+publishing the other matrix rows. Failed focused runs still upload their raw
+diagnostics.
+
 ## Scope and publication
 
 This tests independent **drive paths and media members**, not independent

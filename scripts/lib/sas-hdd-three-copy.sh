@@ -14,6 +14,9 @@ THREE_COPY_FS_STARTED=0
 THREE_COPY_MOUNT_DEVICE=
 THREE_COPY_TOPOLOGY_ID=
 THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT=0
+THREE_COPY_BCACHEFS_DIAGNOSTIC_STARTED_AT=
+THREE_COPY_BCACHEFS_WAIT_PID=
+THREE_COPY_BCACHEFS_DIAGNOSTICS=${THREE_COPY_BCACHEFS_DIAGNOSTICS:-0}
 readonly THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT=600
 
 three_copy_cleanup_stale() {
@@ -371,16 +374,93 @@ three_copy_capture_btrfs_ids() {
   done
 }
 
+three_copy_find_bcachefs_reconcile_wait() {
+  local path pid command
+  for path in /proc/[0-9]*; do
+    pid=${path##*/}
+    command=$(tr '\0' ' ' <"$path/cmdline" 2>/dev/null) || continue
+    [[ $command == "bcachefs reconcile wait $MNT " ]] || continue
+    printf '%s\n' "$pid"
+    return 0
+  done
+  return 1
+}
+
+three_copy_bcachefs_wait_running() {
+  local pid=$1 state
+  kill -0 "$pid" 2>/dev/null || return 1
+  state=$(ps -o stat= -p "$pid" 2>/dev/null) || return 1
+  [[ $state != Z* ]]
+}
+
+three_copy_stop_bcachefs_wait() {
+  local child i pid=${THREE_COPY_BCACHEFS_WAIT_PID:-}
+  [[ -n $pid ]] || return 0
+  child=$(three_copy_find_bcachefs_reconcile_wait || true)
+  [[ -z $child ]] || kill -TERM "$child" 2>/dev/null || true
+  kill -TERM "$pid" 2>/dev/null || true
+  for ((i = 0; i < 50; i++)); do
+    three_copy_bcachefs_wait_running "$pid" || break
+    sleep 0.1
+  done
+  [[ -z $child ]] || kill -KILL "$child" 2>/dev/null || true
+  kill -KILL "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  THREE_COPY_BCACHEFS_WAIT_PID=
+}
+
+three_copy_capture_bcachefs_reconcile_diagnostics() {
+  local prefix=$1 label=$2 sysrq=${3:-}
+  timeout --signal=TERM --kill-after=5s 120 \
+    bash "$SCRIPT_DIR/capture-bcachefs-reconcile-diagnostics.sh" \
+      "$prefix" "$label" "$MNT" \
+      "$THREE_COPY_BCACHEFS_DIAGNOSTIC_STARTED_AT" "$sysrq" || true
+}
+
 three_copy_wait_bcachefs_reconcile() {
   local prefix="$RESULTS_DIR/raw/$BENCH_ID-$1-reconcile"
-  local wait_status=0 status_status=0
+  local wait_status=0 status_status=0 wait_pid offset target now sleep_for started
   THREE_COPY_BCACHEFS_RECONCILE_TIMED_OUT=0
-  timeout --signal=TERM --kill-after=10s "$THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT" \
-    bcachefs reconcile wait "$MNT" >"$prefix-wait.txt" 2>&1 \
-    || wait_status=$?
-  timeout --signal=TERM --kill-after=10s 30 \
-    bcachefs reconcile status "$MNT" >"$prefix-status.txt" 2>&1 \
-    || status_status=$?
+  if [[ $THREE_COPY_BCACHEFS_DIAGNOSTICS != 1 ]]; then
+    timeout --signal=TERM --kill-after=10s "$THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT" \
+      bcachefs reconcile wait "$MNT" >"$prefix-wait.txt" 2>&1 \
+      || wait_status=$?
+    timeout --signal=TERM --kill-after=10s 30 \
+      bcachefs reconcile status "$MNT" >"$prefix-status.txt" 2>&1 \
+      || status_status=$?
+  else
+    THREE_COPY_BCACHEFS_DIAGNOSTIC_STARTED_AT=$(date +%s)
+    timeout --signal=TERM --kill-after=10s "$THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT" \
+      bcachefs reconcile wait "$MNT" >"$prefix-wait.txt" 2>&1 \
+      &
+    wait_pid=$!
+    THREE_COPY_BCACHEFS_WAIT_PID=$wait_pid
+    started=$SECONDS
+    for offset in 0 60 300 540; do
+      target=$((started + offset))
+      while (( SECONDS < target )); do
+        three_copy_bcachefs_wait_running "$wait_pid" || break 2
+        now=$SECONDS
+        sleep_for=$((target - now))
+        (( sleep_for > 5 )) && sleep_for=5
+        sleep "$sleep_for"
+      done
+      three_copy_bcachefs_wait_running "$wait_pid" || break
+      case "$offset" in
+        60) three_copy_capture_bcachefs_reconcile_diagnostics "$prefix" "${offset}s" w ;;
+        540) three_copy_capture_bcachefs_reconcile_diagnostics "$prefix" "${offset}s" t ;;
+        *) three_copy_capture_bcachefs_reconcile_diagnostics "$prefix" "${offset}s" ;;
+      esac
+    done
+    wait "$wait_pid" || wait_status=$?
+    THREE_COPY_BCACHEFS_WAIT_PID=
+    timeout --signal=TERM --kill-after=10s 30 \
+      bcachefs reconcile status "$MNT" >"$prefix-status.txt" 2>&1 \
+      || status_status=$?
+    if (( wait_status != 0 )); then
+      three_copy_capture_bcachefs_reconcile_diagnostics "$prefix" final
+    fi
+  fi
   printf 'wait_exit_status=%s\nstatus_exit_status=%s\ntimeout_seconds=%s\n' \
     "$wait_status" "$status_status" "$THREE_COPY_BCACHEFS_RECONCILE_TIMEOUT" \
     >"$prefix-outcome.txt" || return

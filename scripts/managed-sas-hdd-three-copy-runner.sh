@@ -22,14 +22,15 @@ if [[ $# -eq 1 && $1 == --capabilities ]]; then
   exit 0
 fi
 
-if [[ $# -ne 4 ]]; then
-  echo "usage: modern-fs-benchmark-three-copy-run <run-id> <attempt> <fs> <layout>" >&2
+if [[ $# -ne 4 && $# -ne 5 ]]; then
+  echo "usage: modern-fs-benchmark-three-copy-run <run-id> <attempt> <fs> <layout> [--diagnostics]" >&2
   exit 2
 fi
 run_id=$1
 attempt=$2
 fs=$3
 layout=$4
+diagnostics=${5:-}
 configuration="$fs/$layout"
 [[ $run_id =~ ^[0-9]+$ && $attempt =~ ^[0-9]+$ ]] \
   || { echo "run ID and attempt must be numeric" >&2; exit 2; }
@@ -38,6 +39,10 @@ case "$configuration" in
   zfs/mirror3 | bcachefs/replicas3) ;;
   *) echo "unsupported three-copy configuration: $configuration" >&2; exit 2 ;;
 esac
+if [[ -n $diagnostics ]]; then
+  [[ $diagnostics == --diagnostics && $configuration == bcachefs/replicas3 ]] \
+    || { echo "diagnostics are supported only for bcachefs/replicas3" >&2; exit 2; }
+fi
 if [[ $fs == bcachefs ]]; then
   command -v bcachefs >/dev/null \
     || { echo "bcachefs tools are not installed" >&2; exit 2; }
@@ -136,6 +141,11 @@ export BENCH_REVISION="${MANAGED_BENCHMARK_REVISION:-}"
 export BENCH_RESULT_DEVICES="$MANAGED_THREE_COPY_MEMBER_DEVICES"
 export BENCH_RESULT_NDEV=3
 export BENCH_HARDWARE_RANDOM_SCALING=1
+if [[ $diagnostics == --diagnostics ]]; then
+  export THREE_COPY_BCACHEFS_DIAGNOSTICS=1
+else
+  export THREE_COPY_BCACHEFS_DIAGNOSTICS=0
+fi
 export RESULTS_DIR="$results_dir"
 export NDEV=3 DEV_SIZE=16G SEQ_SIZE=2G READ_SIZE=2G AGING_SIZE=2G
 export AGING_IO=64M AGING_ITERS=8 COMP_SIZE=2G RUNTIME=30 SNAPSCALE_COUNT=250
