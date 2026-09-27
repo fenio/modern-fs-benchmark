@@ -1408,7 +1408,7 @@ let explorerLoadState = "loading";
 let explorerMetric = DATA.metrics.some(m => m.key === "seqwrite_mbps")
   ? "seqwrite_mbps" : DATA.metrics[0].key;
 let explorerMode = "raw";
-let explorerDays = 0;
+let explorerDays = 30;
 let explorerBaseline = null;
 
 const explorerLineType = e => ["solid", "dashed", "dotted", "dashed", "dotted"][e.vi % 5];
@@ -1800,7 +1800,7 @@ function syncControls() {
   app.appendChild(lg);
 }
 
-let trendDays = 0;  // 0 = all
+let trendDays = 30;  // 0 = all
 const content = el("div");
 app.appendChild(content);
 

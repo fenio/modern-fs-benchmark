@@ -220,6 +220,8 @@ class DashboardRegressionTests(unittest.TestCase):
         latest = data["latest"]["results"]
         self.assertEqual(latest["ext4/single"]["seqwrite_mbps"], 510.2)
         self.assertEqual(latest["btrfs/raid1"]["aging_mbps"], [42.0, 39.5, 37.0])
+        self.assertIn("let trendDays = 30;  // 0 = all", html)
+        self.assertIn("let explorerDays = 30;", html)
         self.assertIsNone(latest["zfs/mirror"]["reflink_ms"])
         self.assertIsNone(latest["bcachefs/replicas2"]["scrub_found"])
         self.assertEqual(
