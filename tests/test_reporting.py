@@ -30,6 +30,7 @@ ZFS_BACKEND = ROOT / "scripts" / "fs" / "zfs.sh"
 BCACHEFS_BACKEND = ROOT / "scripts" / "fs" / "bcachefs.sh"
 BCACHEFS_DEBUG = ROOT / "scripts" / "lib" / "bcachefs-debug.sh"
 BCACHEFS_REPRO = ROOT / "scripts" / "repro-bcachefs-ec-evacuate.sh"
+BTRFS_RAID6_REPRO = ROOT / "scripts" / "repro-btrfs-raid6-degraded-write.sh"
 BENCH_WORKFLOW = ROOT / ".github" / "workflows" / "bench.yml"
 HARDWARE_BENCH_WORKFLOW = (
     ROOT / ".github" / "workflows" / "bench-real-hw.yml"
@@ -50,6 +51,9 @@ RERUN_SLOW_WORKFLOW = ROOT / ".github" / "workflows" / "rerun-slow.yml"
 PAGES_WORKFLOW = ROOT / ".github" / "workflows" / "publish-pages.yml"
 BCACHEFS_REPRO_WORKFLOW = (
     ROOT / ".github" / "workflows" / "repro-bcachefs-ec.yml"
+)
+BTRFS_RAID6_REPRO_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "repro-btrfs-raid6.yml"
 )
 
 METRIC_CONTRACT = [
@@ -2199,6 +2203,38 @@ fs_io_barrier
         ):
             self.assertIn(command, reproducer)
         self.assertIn("workflow_dispatch", workflow)
+        self.assertIn("if: always()", workflow)
+
+    def test_btrfs_raid6_reproducer_isolates_degraded_write_variables(self):
+        reproducer = BTRFS_RAID6_REPRO.read_text()
+        workflow = BTRFS_RAID6_REPRO_WORKFLOW.read_text()
+
+        for command in (
+            "modprobe btrfs",
+            'mkfs.btrfs -f -d raid6 -m raid1c3',
+            'mount -t btrfs -o degraded,noatime',
+            '--randrepeat=1',
+            '--fdatasync=16',
+            '--fallocate=none',
+            'os.fdatasync(fd)',
+            'filefrag -v "$TEST_FILE"',
+            'btrfs device stats "$MNT"',
+            'dmesg --time-format iso --color=never',
+        ):
+            self.assertIn(command, reproducer)
+        for variable in (
+            "PRELOAD_SIZE",
+            "FALLOCATE_MODE",
+            "SYNC_MODE",
+            "MISSING_INDEX",
+        ):
+            self.assertIn(variable, reproducer)
+            self.assertIn(variable, workflow)
+        self.assertIn("workflow_dispatch", workflow)
+        self.assertIn("fail-fast: false", workflow)
+        self.assertIn("fresh-default-fdatasync-devid2", workflow)
+        self.assertIn("preloaded-none-fdatasync-devid2", workflow)
+        self.assertIn("preloaded-default-fdatasync-devid4", workflow)
         self.assertIn("if: always()", workflow)
 
     def test_hardware_workflow_requires_managed_runner(self):

@@ -1,0 +1,99 @@
+name: reproduce-btrfs-raid6-degraded-write
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: fresh-default-fdatasync-devid2
+            preload_size: '0'
+            fallocate_mode: default
+            sync_mode: fdatasync16
+            missing_index: 1
+          - label: fresh-none-fdatasync-devid2
+            preload_size: '0'
+            fallocate_mode: none
+            sync_mode: fdatasync16
+            missing_index: 1
+          - label: fresh-default-end-fsync-devid2
+            preload_size: '0'
+            fallocate_mode: default
+            sync_mode: end-fsync
+            missing_index: 1
+          - label: fresh-default-no-sync-devid2
+            preload_size: '0'
+            fallocate_mode: default
+            sync_mode: none
+            missing_index: 1
+          - label: preloaded-default-fdatasync-devid2
+            preload_size: 7G
+            fallocate_mode: default
+            sync_mode: fdatasync16
+            missing_index: 1
+          - label: preloaded-none-fdatasync-devid2
+            preload_size: 7G
+            fallocate_mode: none
+            sync_mode: fdatasync16
+            missing_index: 1
+          - label: preloaded-default-end-fsync-devid2
+            preload_size: 7G
+            fallocate_mode: default
+            sync_mode: end-fsync
+            missing_index: 1
+          - label: preloaded-default-fdatasync-devid1
+            preload_size: 7G
+            fallocate_mode: default
+            sync_mode: fdatasync16
+            missing_index: 0
+          - label: preloaded-default-fdatasync-devid3
+            preload_size: 7G
+            fallocate_mode: default
+            sync_mode: fdatasync16
+            missing_index: 2
+          - label: preloaded-default-fdatasync-devid4
+            preload_size: 7G
+            fallocate_mode: default
+            sync_mode: fdatasync16
+            missing_index: 3
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Btrfs tools
+        run: sudo scripts/install-deps.sh btrfs
+
+      - name: Run degraded-write reproducer
+        run: |
+          sudo env \
+            OUTPUT_DIR="$PWD/repro-output" \
+            WORK_ROOT=/mnt \
+            PRELOAD_SIZE=${{ matrix.preload_size }} \
+            FALLOCATE_MODE=${{ matrix.fallocate_mode }} \
+            SYNC_MODE=${{ matrix.sync_mode }} \
+            MISSING_INDEX=${{ matrix.missing_index }} \
+            scripts/repro-btrfs-raid6-degraded-write.sh
+
+      - name: Write outcome summary
+        if: always()
+        run: |
+          if [ -f repro-output/outcome.json ]; then
+            jq -r '"### `${{ matrix.label }}`\n\n```json\n\(.)\n```"' \
+              repro-output/outcome.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: btrfs-raid6-degraded-${{ matrix.label }}
+          path: repro-output/
+          if-no-files-found: warn
