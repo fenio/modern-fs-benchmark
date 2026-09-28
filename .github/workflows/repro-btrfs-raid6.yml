@@ -50,6 +50,11 @@ jobs:
             fallocate_mode: default
             sync_mode: end-fsync
             missing_index: 1
+          - label: preloaded-default-no-sync-devid2
+            preload_size: 7G
+            fallocate_mode: default
+            sync_mode: none
+            missing_index: 1
           - label: preloaded-default-fdatasync-devid1
             preload_size: 7G
             fallocate_mode: default

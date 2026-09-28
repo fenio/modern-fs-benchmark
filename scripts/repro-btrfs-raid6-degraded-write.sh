@@ -109,6 +109,13 @@ umount "$MNT"
 MISSING_DEV=${LOOPS[$MISSING_INDEX]}
 log "detach index $MISSING_INDEX ($MISSING_DEV)"
 losetup -d "$MISSING_DEV"
+for ((attempt = 0; attempt < 100; attempt++)); do
+  losetup "$MISSING_DEV" >/dev/null 2>&1 || break
+  sleep 0.1
+done
+if losetup "$MISSING_DEV" >/dev/null 2>&1; then
+  die "loop device remained attached: $MISSING_DEV"
+fi
 
 MOUNT_DEV=
 for i in 0 1 2 3; do
@@ -119,6 +126,8 @@ for i in 0 1 2 3; do
 done
 mount -t btrfs -o degraded,noatime "$MOUNT_DEV" "$MNT"
 capture_diagnostics before
+btrfs filesystem show "$MNT" | grep -q MISSING \
+  || die "Btrfs remounted without a missing member"
 
 fio_args=(
   --output-format=json

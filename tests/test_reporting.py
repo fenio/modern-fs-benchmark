@@ -2213,6 +2213,8 @@ fs_io_barrier
             "modprobe btrfs",
             'mkfs.btrfs -f -d raid6 -m raid1c3',
             'mount -t btrfs -o degraded,noatime',
+            'losetup "$MISSING_DEV"',
+            'grep -q MISSING',
             '--randrepeat=1',
             '--fdatasync=16',
             '--fallocate=none',
@@ -2234,6 +2236,7 @@ fs_io_barrier
         self.assertIn("fail-fast: false", workflow)
         self.assertIn("fresh-default-fdatasync-devid2", workflow)
         self.assertIn("preloaded-none-fdatasync-devid2", workflow)
+        self.assertIn("preloaded-default-no-sync-devid2", workflow)
         self.assertIn("preloaded-default-fdatasync-devid4", workflow)
         self.assertIn("if: always()", workflow)
 
