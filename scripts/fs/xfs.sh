@@ -203,6 +203,21 @@ fs_drop_caches() {
   drop_caches
 }
 
+# sync(2) only forces the XFS log; in-place metadata writeback (the AIL) and
+# inode inactivation happen later. Freezing pushes the AIL and waits for it.
+# On the zvol layout those writes then sit in the pool's open txg, which
+# needs its own barrier (see the zfs backend).
+fs_io_barrier() {
+  sync
+  fsfreeze -f "$MNT" || die "failed to freeze $MNT for the I/O barrier"
+  fsfreeze -u "$MNT" || die "failed to thaw $MNT after the I/O barrier"
+  if zvol_case; then
+    zpool sync "$ZPOOL"
+    zpool wait -t free "$ZPOOL"
+    zpool sync "$ZPOOL"
+  fi
+}
+
 fs_teardown() {
   if zvol_case; then
     umount "$MNT" 2>/dev/null || true

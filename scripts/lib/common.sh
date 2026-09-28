@@ -57,6 +57,14 @@ fs_drop_caches() {
   drop_caches
 }
 
+# Barrier around block I/O accounting windows: return once the filesystem's
+# own writes for everything done so far have reached the member devices.
+# Every backend overrides this; plain sync(2) leaves each of them with some
+# deferred writeback or background cleanup (see the backend's barrier).
+fs_io_barrier() {
+  sync
+}
+
 # Degraded-mode hooks. Backends that support failing a device override
 # these; the default skips the phase.
 fs_degrade() { return 1; }

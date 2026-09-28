@@ -181,6 +181,30 @@ fs_teardown() {
   umount "$MNT" 2>/dev/null || true
 }
 
+# sync(2) reaches bch2_sync_fs(), which only flushes the journal; btree node,
+# key-cache and write-buffer updates stay pinned in it and journal reclaim
+# writes them back lazily. trigger_journal_flush waits until every
+# outstanding journal pin is flushed, and a btree node's pin is dropped only
+# once its write completes. The filesystem's sysfs directory is found
+# through the "bcachefs" link the module puts on each member block device.
+# Deleting a subvolume only schedules the delete_dead_snapshots pass on a
+# workqueue; trigger_delete_dead_snapshots runs that pass now, under the same
+# lock, so it also waits for a pass already running. It goes before the
+# journal flush, which then writes the deletion's btree updates.
+# Reconcile (EC striping, background moves) keeps running after the barrier.
+fs_io_barrier() {
+  local member internal
+  sync
+  member=$(readlink -f "${DEVICES[0]}")
+  internal=$(readlink -f "/sys/class/block/${member##*/}/bcachefs/..")/internal
+  [ -w "$internal/trigger_delete_dead_snapshots" ] ||
+    die "bcachefs snapshot deletion trigger not found: $internal/trigger_delete_dead_snapshots"
+  [ -w "$internal/trigger_journal_flush" ] ||
+    die "bcachefs journal flush trigger not found: $internal/trigger_journal_flush"
+  echo 1 > "$internal/trigger_delete_dead_snapshots" || die "bcachefs snapshot deletion failed"
+  echo 1 > "$internal/trigger_journal_flush" || die "bcachefs journal flush failed"
+}
+
 fs_scrub() {
   # scrub may exit non-zero after *finding* errors — that's still a
   # completed scrub; only treat CLI-level failure as unsupported

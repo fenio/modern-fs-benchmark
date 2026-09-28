@@ -39,6 +39,43 @@ enable_trace() {
   fi
 }
 
+# Physical I/O accounting: kernel block counters of the leaf devices under
+# BLOCK_IO_ROOTS (partitions stay separate from their disk), diffed around a
+# phase window. Every window's per-leaf delta lands in
+# raw/<id>-block-io.jsonl; the totals feed the *_amp / *_per_* metrics.
+# Both ends run fs_io_barrier, outside the callers' timers: the opening one
+# keeps the previous step's writes (e.g. a just-deleted fio file) out of the
+# window, the closing one makes the window own its workload's writes.
+#
+# The barrier is per backend because sync(2) only guarantees durability.
+# ZFS stops at the ZIL, XFS and bcachefs at their logs, and their in-place
+# writeback follows seconds later. A plain sync would bill that deferred
+# writeback to whichever window happens to be open, so the numbers would move
+# with txg and log-push timing instead of with the stack. Background work a
+# filesystem schedules on its own (bcachefs reconcile, btrfs async discard,
+# dm-cache writeback) can still land in a later step's window.
+block_io_begin() {
+  fs_io_barrier
+  BLOCK_IO_BEFORE=$(python3 "$SCRIPT_DIR/block-io-counters.py" snapshot \
+    "${BLOCK_IO_ROOTS[@]}") || die "failed to snapshot block I/O counters"
+}
+
+block_io_end() {
+  local window=$1 delta
+  fs_io_barrier
+  delta=$(python3 "$SCRIPT_DIR/block-io-counters.py" delta "$BLOCK_IO_BEFORE" \
+    "${BLOCK_IO_ROOTS[@]}") || die "failed to diff block I/O counters for $window"
+  jq -c --arg window "$window" '{window: $window} + .' <<<"$delta" \
+    >>"$RESULTS_DIR/raw/$BENCH_ID-block-io.jsonl"
+  BLOCK_IO_READ_BYTES=$(jq '.total.read_bytes' <<<"$delta")
+  BLOCK_IO_WRITE_BYTES=$(jq '.total.write_bytes' <<<"$delta")
+}
+
+block_io_ratio() {  # <physical-bytes> <logical-bytes-or-ops>
+  [ "$2" -gt 0 ] || die "block I/O ratio needs a positive denominator, got $2"
+  jq -n --argjson physical "$1" --argjson logical "$2" '$physical / $logical'
+}
+
 # --- Phase 0: host calibration --------------------------------------------
 # Same micro-workload on the runner's own disk, before any filesystem is
 # created. Matrix jobs run on separate ephemeral VMs — this anchor makes
@@ -82,6 +119,7 @@ BLOCK_QUEUE_JSON=$(python3 "$SCRIPT_DIR/block-queue-provenance.py" \
   "${queue_roots[@]}") || die "failed to capture block queue provenance"
 [ "$(jq length <<<"$BLOCK_QUEUE_JSON")" -gt 0 ] \
   || die "no leaf block queues found for benchmark topology"
+BLOCK_IO_ROOTS=("${queue_roots[@]}")
 FS_VERSION=$(fs_version 2>/dev/null || true)
 log "$FS ($LAYOUT) mounted at $MNT, data dir $DATA${FS_VERSION:+ [$FS_VERSION]}"
 }
@@ -94,9 +132,13 @@ hardware_random_scaling_enabled() {
 phase_sequential_write() {
 local out
 log "phase: sequential write ($SEQ_SIZE)"
+block_io_begin
 out=$(fio_json seqwrite --directory="$DATA" --rw=write --bs=1M \
   --size="$SEQ_SIZE" --end_fsync=1)
+block_io_end seqwrite
 SEQWRITE_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out")
+SEQWRITE_WRITE_AMP=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" \
+  "$(jq '.jobs[0].write.io_bytes' "$out")")
 rm -f "$DATA"/seqwrite*
 }
 
@@ -109,9 +151,13 @@ RANDWRITE4_SHARDED_IOPS=null
 RANDWRITE8_SHARDED_IOPS=null
 RANDWRITE16_SHARDED_IOPS=null
 log "phase: random write 4k, ${RUNTIME}s"
+block_io_begin
 out=$(fio_json randwrite --directory="$DATA" --rw=randwrite --bs=4k \
   --size=1G --runtime="$RUNTIME" --time_based --fdatasync=16)
+block_io_end randwrite
 RANDWRITE_IOPS=$(jq '.jobs[0].write.iops' "$out")
+RANDWRITE_WRITE_AMP=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" \
+  "$(jq '.jobs[0].write.io_bytes' "$out")")
 # fsync tail latency — CoW transaction commits (ZFS txg, btrfs commit
 # interval) show up as periodic spikes that the IOPS average hides
 FSYNC_P99_MS=$(jq '(.jobs[0].sync.lat_ns.percentile."99.000000" // null) | if . then . / 1000000 else null end' "$out")
@@ -120,10 +166,14 @@ rm -f "$DATA"/randwrite*
 # 4-thread variant: filesystem locking architecture only shows under
 # concurrency (bcachefs author's request) — 4 threads = the runner's
 # 4 vCPUs, each with its own file
+block_io_begin
 out=$(fio_json randwrite-par --directory="$DATA" --rw=randwrite --bs=4k \
   --size=256M --runtime="$RUNTIME" --time_based --fdatasync=16 \
   --numjobs=4 --group_reporting)
+block_io_end randwrite-par
 RANDWRITE4_IOPS=$(jq '.jobs[0].write.iops' "$out")
+RANDWRITE4_WRITE_AMP=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" \
+  "$(jq '.jobs[0].write.io_bytes' "$out")")
 rm -f "$DATA"/randwrite-par*
 if hardware_random_scaling_enabled; then
   out=$(fio_json randwrite-par8 --directory="$DATA" --rw=randwrite --bs=4k \
@@ -177,17 +227,25 @@ fs_drop_caches
 # single pass over distinct blocks (fio's random map forbids repeats):
 # a time-based run loops back over cached blocks and blends cold reads
 # with page-cache hits — observed 4.7x run-to-run swings
+block_io_begin
 out=$(fio_json randread --filename="$DATA/read.dat" --rw=randread --bs=4k \
   --size="$READ_SIZE" --io_size=512M)
+block_io_end randread
 RANDREAD_IOPS=$(jq '.jobs[0].read.iops' "$out")
+RANDREAD_READ_AMP=$(block_io_ratio "$BLOCK_IO_READ_BYTES" \
+  "$(jq '.jobs[0].read.io_bytes' "$out")")
 # Parallel readers: a mirror can only serve reads from both copies when
 # there IS concurrency — a single dependent-read stream can't show it.
 # (On CI loop devices there's still just one physical disk underneath;
 # this measurement earns its keep on real hardware.)
 fs_drop_caches
+block_io_begin
 out=$(fio_json randread-par --filename="$DATA/read.dat" --rw=randread --bs=4k \
   --size="$READ_SIZE" --io_size=128M --numjobs=4 --group_reporting)
+block_io_end randread-par
 RANDREAD4_IOPS=$(jq '.jobs[0].read.iops' "$out")
+RANDREAD4_READ_AMP=$(block_io_ratio "$BLOCK_IO_READ_BYTES" \
+  "$(jq '.jobs[0].read.io_bytes' "$out")")
 if hardware_random_scaling_enabled; then
   fs_drop_caches
   out=$(fio_json randread-par8 --filename="$DATA/read.dat" --rw=randread --bs=4k \
@@ -206,9 +264,13 @@ local out
 fs_drop_caches
 # one pass over the whole file — a time-based loop re-reads cached
 # blocks and reports RAM speed (same flaw the random reads had)
+block_io_begin
 out=$(fio_json seqread --filename="$DATA/read.dat" --rw=read --bs=1M \
   --size="$READ_SIZE")
+block_io_end seqread
 SEQREAD_MBPS=$(jq '.jobs[0].read.bw_bytes / 1048576' "$out")
+SEQREAD_READ_AMP=$(block_io_ratio "$BLOCK_IO_READ_BYTES" \
+  "$(jq '.jobs[0].read.io_bytes' "$out")")
 }
 
 # --- Phase 3.5: trivial-op latency, idle vs under streaming write -----------
@@ -245,21 +307,30 @@ log "trivial-op p99: idle ${LAT_IDLE_P99%.*}ms, under load ${LAT_LOAD_P99%.*}ms 
 # --- Phase 3.6: source-tree ops (20k small files) ----------------------------
 # The "cp -r a kernel tree" test: 20k files of 1-8k across 200 dirs.
 phase_source_tree() {
-local t0
+local payload_bytes t0
+local -r files=20000
 log "phase: source-tree ops (20k small files)"
+block_io_begin
 t0=$(now_ms)
-python3 - "$DATA/tree" <<'PY'
+payload_bytes=$(python3 - "$DATA/tree" "$files" <<'PY'
 import os, random, sys
 random.seed(42)
 base = sys.argv[1]
-for i in range(20000):
+payload = 0
+for i in range(int(sys.argv[2])):
     d = os.path.join(base, "d%d" % ((i % 200) // 20), "d%d" % (i % 200))
     os.makedirs(d, exist_ok=True)
+    size = random.choice((1024, 2048, 4096, 8192))
     with open(os.path.join(d, "f%d" % i), "wb") as f:
-        f.write(os.urandom(random.choice((1024, 2048, 4096, 8192))))
+        f.write(os.urandom(size))
+    payload += size
+print(payload)
 PY
+)
 sync
 SMALLTREE_CREATE_MS=$(( $(now_ms) - t0 ))
+block_io_end smalltree-create
+SMALLTREE_CREATE_WRITE_AMP=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" "$payload_bytes")
 # parallel variant: 4 workers, disjoint directory subsets — metadata
 # lock contention (tree locks vs per-AG allocation vs b-tree design)
 t0=$(now_ms)
@@ -283,14 +354,20 @@ sync
 SMALLTREE_CREATE4_MS=$(( $(now_ms) - t0 ))
 rm -rf "$DATA/tree4"
 fs_drop_caches || true
+block_io_begin
 t0=$(now_ms)
 cp -r "$DATA/tree" "$DATA/tree2"
 sync
 SMALLTREE_CP_MS=$(( $(now_ms) - t0 ))
+block_io_end smalltree-cp
+SMALLTREE_CP_WRITE_AMP=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" "$payload_bytes")
+block_io_begin
 t0=$(now_ms)
 rm -rf "$DATA/tree2"
 sync
 SMALLTREE_RM_MS=$(( $(now_ms) - t0 ))
+block_io_end smalltree-rm
+SMALLTREE_RM_BYTES_PER_FILE=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" "$files")
 rm -rf "$DATA/tree"
 log "source tree: create ${SMALLTREE_CREATE_MS}ms, cp -r ${SMALLTREE_CP_MS}ms, rm -rf ${SMALLTREE_RM_MS}ms"
 }
@@ -369,6 +446,7 @@ local -a warm_ms=()
 log "phase: large directory ($LARGEDIR_FILES empty files)"
 
 sync
+block_io_begin
 t0=$(now_ms)
 python3 - "$DATA/large-dir" "$LARGEDIR_FILES" <<'PY'
 import os, sys
@@ -382,6 +460,8 @@ for i in range(count):
 PY
 sync
 LARGEDIR_CREATE_MS=$(( $(now_ms) - t0 ))
+block_io_end largedir-create
+LARGEDIR_CREATE_BYTES_PER_FILE=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" "$LARGEDIR_FILES")
 
 fs_drop_caches
 t0=$(now_ms)
@@ -407,16 +487,19 @@ done
 LARGEDIR_STAT_WARM_MS=$(printf '%s\n' "${warm_ms[@]}" \
   | jq -s 'sort | .[length/2|floor]')
 
+block_io_begin
 t0=$(now_ms)
 rm -rf "$DATA/large-dir"
 sync
 LARGEDIR_DELETE_MS=$(( $(now_ms) - t0 ))
+block_io_end largedir-delete
+LARGEDIR_DELETE_BYTES_PER_FILE=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" "$LARGEDIR_FILES")
 log "large directory: create ${LARGEDIR_CREATE_MS}ms, cold names ${LARGEDIR_READDIR_COLD_MS}ms, cold stat ${LARGEDIR_STAT_COLD_MS}ms, warm stat ${LARGEDIR_STAT_WARM_MS}ms, delete ${LARGEDIR_DELETE_MS}ms"
 }
 
 # --- Phase 4: CoW aging — overwrite under a growing pile of snapshots -----
 phase_aging() {
-local i out t0
+local i out t0 logical_bytes=0
 log "phase: aging, $AGING_ITERS iterations of snapshot + $AGING_IO overwrite"
 fio --name=agingprep --filename="$DATA/aging.dat" --rw=write --bs=1M \
   --size="$AGING_SIZE" --end_fsync=1 --output=/dev/null
@@ -424,6 +507,9 @@ FREE_BEFORE_AGING=$(fs_free_bytes)
 AGING_BW=()
 SNAP_MS=()
 SNAPSHOTS_OK=1
+# one window over the whole loop: snapshot metadata is part of the CoW
+# aging cost this phase measures
+block_io_begin
 for i in $(seq 1 "$AGING_ITERS"); do
   if [ "$SNAPSHOTS_OK" = 1 ]; then
     t0=$(now_ms)
@@ -437,7 +523,10 @@ for i in $(seq 1 "$AGING_ITERS"); do
   out=$(fio_json "aging$i" --filename="$DATA/aging.dat" --rw=randwrite \
     --bs=4k --size="$AGING_SIZE" --io_size="$AGING_IO" --end_fsync=1)
   AGING_BW+=("$(jq '.jobs[0].write.bw_bytes / 1048576' "$out")")
+  logical_bytes=$(( logical_bytes + $(jq '.jobs[0].write.io_bytes' "$out") ))
 done
+block_io_end aging
+AGING_WRITE_AMP=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" "$logical_bytes")
 }
 
 # --- Phase 5: snapshot delete + space reclaim ------------------------------
@@ -497,6 +586,7 @@ SNAPSCALE_TOTAL_S=null
 SNAPSCALE_LIST_MS=null
 SNAPSCALE_REMOUNT_MS=null
 SNAPSCALE_DELETE_MS=null
+SNAPSCALE_CREATE_BYTES_PER_SNAPSHOT=null
 # native-snapshot filesystems, plus LVM: with no churn between snapshots
 # there's no CoW amplification during creation, so dm-snapshot can
 # genuinely attempt 500 small snapshots — and wherever it stops,
@@ -511,6 +601,7 @@ if [[ "$FS" =~ ^(btrfs|zfs|bcachefs)$ || "$LAYOUT" == lvm-* ]]; then
     SNAPSCALE_N=150
   fi
   log "phase: snapshot-count scaling ($SNAPSCALE_N snapshots)"
+  block_io_begin
   t0=$(now_ms)
   for i in $(seq 1 "$SNAPSCALE_N"); do
     ts=$(now_ms)
@@ -524,6 +615,11 @@ if [[ "$FS" =~ ^(btrfs|zfs|bcachefs)$ || "$LAYOUT" == lvm-* ]]; then
     fi
   done
   SNAPSCALE_TOTAL_S=$(( ($(now_ms) - t0) / 1000 ))
+  block_io_end snapscale-create
+  if [ "$SNAPSCALE_N" -gt 0 ]; then
+    SNAPSCALE_CREATE_BYTES_PER_SNAPSHOT=$(block_io_ratio \
+      "$BLOCK_IO_WRITE_BYTES" "$SNAPSCALE_N")
+  fi
   if [ "${#TAIL_MS[@]}" -gt 0 ]; then
     SNAPSCALE_CREATE_MS=$(printf '%s\n' "${TAIL_MS[@]}" | jq -s 'sort | .[length/2|floor]')
   fi
@@ -553,14 +649,18 @@ local out
 log "phase: compression"
 COMP_RATIO=null
 COMP_MBPS=null
+COMP_WRITE_AMP=null
 if fs_setup_compression "$MNT/comp"; then
   # fallocate=none: btrfs (at least) never compresses writes into
   # preallocated extents, and fio preallocates by default
+  block_io_begin
   out=$(fio_json compwrite --directory="$MNT/comp" --rw=write --bs=1M \
     --size="$COMP_SIZE" --end_fsync=1 --refill_buffers \
     --buffer_compress_percentage=75 --fallocate=none)
+  block_io_end compwrite
   COMP_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out")
-  sync
+  COMP_WRITE_AMP=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" \
+    "$(jq '.jobs[0].write.io_bytes' "$out")")
   COMP_RATIO=$(fs_compress_ratio "$MNT/comp")
 else
   log "compression unsupported on $FS — skipping"
@@ -580,12 +680,18 @@ REFLINK_FIEMAP_SHARED=null
 DIV_PLAIN_MBPS=null
 DIV_CLONE_MBPS=null
 DIV_SNAP_MBPS=null
+DIV_CLONE_WRITE_AMP=null
+DIV_SNAP_WRITE_AMP=null
 log "phase: reflink + clone divergence"
 fio --name=plainprep --filename="$DATA/plain.dat" --rw=write --bs=1M \
   --size="$READ_SIZE" --end_fsync=1 --output=/dev/null
+block_io_begin
 out=$(fio_json div-plain --filename="$DATA/plain.dat" --rw=randwrite \
   --bs=4k --size="$READ_SIZE" --io_size=128M --end_fsync=1)
+block_io_end div-plain
 DIV_PLAIN_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out")
+DIV_PLAIN_WRITE_AMP=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" \
+  "$(jq '.jobs[0].write.io_bytes' "$out")")
 if [ "${FS_REFLINK:-0}" = 1 ]; then
   t0=$(now_ms)
   if cp --reflink=always "$DATA/read.dat" "$DATA/reflink-copy"; then
@@ -597,16 +703,24 @@ if [ "${FS_REFLINK:-0}" = 1 ]; then
     else
       REFLINK_FIEMAP_SHARED=false
     fi
+    block_io_begin
     out=$(fio_json div-clone --filename="$DATA/reflink-copy" --rw=randwrite \
       --bs=4k --size="$READ_SIZE" --io_size=128M --end_fsync=1)
+    block_io_end div-clone
     DIV_CLONE_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out")
+    DIV_CLONE_WRITE_AMP=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" \
+      "$(jq '.jobs[0].write.io_bytes' "$out")")
   fi
 fi
 if [ "$SNAPSHOTS_OK" = 1 ]; then
   if fs_snapshot divsnap; then
+    block_io_begin
     out=$(fio_json div-snap --filename="$DATA/plain.dat" --rw=randwrite \
       --bs=4k --size="$READ_SIZE" --io_size=128M --end_fsync=1)
+    block_io_end div-snap
     DIV_SNAP_MBPS=$(jq '.jobs[0].write.bw_bytes / 1048576' "$out")
+    DIV_SNAP_WRITE_AMP=$(block_io_ratio "$BLOCK_IO_WRITE_BYTES" \
+      "$(jq '.jobs[0].write.io_bytes' "$out")")
   fi
 fi
 log "divergence: plain ${DIV_PLAIN_MBPS%.*}, clone ${DIV_CLONE_MBPS%.*}, after-snapshot ${DIV_SNAP_MBPS%.*} MiB/s"
@@ -884,11 +998,28 @@ jq -n \
   --argjson scrub_found "$SCRUB_FOUND" \
   --argjson scrub_repaired "$SCRUB_REPAIRED" \
   --argjson data_intact "$DATA_INTACT" \
+  --argjson seqwrite_write_amp "$SEQWRITE_WRITE_AMP" \
+  --argjson randwrite_write_amp "$RANDWRITE_WRITE_AMP" \
+  --argjson randwrite4_write_amp "$RANDWRITE4_WRITE_AMP" \
+  --argjson randread_read_amp "$RANDREAD_READ_AMP" \
+  --argjson randread4_read_amp "$RANDREAD4_READ_AMP" \
+  --argjson seqread_read_amp "$SEQREAD_READ_AMP" \
+  --argjson smalltree_create_write_amp "$SMALLTREE_CREATE_WRITE_AMP" \
+  --argjson smalltree_cp_write_amp "$SMALLTREE_CP_WRITE_AMP" \
+  --argjson aging_write_amp "$AGING_WRITE_AMP" \
+  --argjson compress_write_amp "$COMP_WRITE_AMP" \
+  --argjson divergence_plain_write_amp "$DIV_PLAIN_WRITE_AMP" \
+  --argjson divergence_clone_write_amp "$DIV_CLONE_WRITE_AMP" \
+  --argjson divergence_snap_write_amp "$DIV_SNAP_WRITE_AMP" \
+  --argjson largedir_create_bytes_per_file "$LARGEDIR_CREATE_BYTES_PER_FILE" \
+  --argjson largedir_delete_bytes_per_file "$LARGEDIR_DELETE_BYTES_PER_FILE" \
+  --argjson smalltree_rm_bytes_per_file "$SMALLTREE_RM_BYTES_PER_FILE" \
+  --argjson snapscale_create_bytes_per_snapshot "$SNAPSCALE_CREATE_BYTES_PER_SNAPSHOT" \
   --argjson calib_seqwrite_mbps "$CALIB_SEQ_MBPS" \
   --argjson calib_randwrite_iops "$CALIB_RAND_IOPS" \
   --argjson include_hardware_random_scaling "$include_hardware_random_scaling" \
   --argjson include_device_size "$include_device_size" \
-  '({schema_version: 6,
+  '({schema_version: 7,
     fs: $fs, layout: $layout, kernel: $kernel, version: $version, date: $date,
     devices: $devices, ndev: $ndev, block_queue: $block_queue,
     calibration: {seqwrite_mbps: $calib_seqwrite_mbps,
@@ -949,6 +1080,23 @@ jq -n \
               scrub_s: $scrub_s,
               scrub_found: $scrub_found,
               scrub_repaired: $scrub_repaired,
+              seqwrite_write_amp: $seqwrite_write_amp,
+              randwrite_write_amp: $randwrite_write_amp,
+              randwrite4_write_amp: $randwrite4_write_amp,
+              randread_read_amp: $randread_read_amp,
+              randread4_read_amp: $randread4_read_amp,
+              seqread_read_amp: $seqread_read_amp,
+              smalltree_create_write_amp: $smalltree_create_write_amp,
+              smalltree_cp_write_amp: $smalltree_cp_write_amp,
+              aging_write_amp: $aging_write_amp,
+              compress_write_amp: $compress_write_amp,
+              divergence_plain_write_amp: $divergence_plain_write_amp,
+              divergence_clone_write_amp: $divergence_clone_write_amp,
+              divergence_snap_write_amp: $divergence_snap_write_amp,
+              largedir_create_bytes_per_file: $largedir_create_bytes_per_file,
+              largedir_delete_bytes_per_file: $largedir_delete_bytes_per_file,
+              smalltree_rm_bytes_per_file: $smalltree_rm_bytes_per_file,
+              snapscale_create_bytes_per_snapshot: $snapscale_create_bytes_per_snapshot,
               data_intact: $data_intact} +
               (if $include_hardware_random_scaling then {
                 randwrite8_iops: $randwrite8_iops,

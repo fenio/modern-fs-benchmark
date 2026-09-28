@@ -67,6 +67,22 @@ ENTITY_ORDER = [
 ]
 
 
+# Shared basis of the physical-I/O metrics (*_amp, *_per_*).
+BLOCK_IO_BASIS = (
+    "Physical bytes are the growth of the kernel block counters "
+    "(/sys/class/block/*/stat) summed over the benchmark's member devices below any "
+    "md/LVM/LUKS/dm-integrity layer: loop devices in CI, the configured partitions or "
+    "disks on hardware. The window opens and closes with a write barrier "
+    "outside the phase timers. It waits for the writes sync leaves for later: "
+    "a freeze/thaw on ext4 and XFS, zpool sync plus the frees of destroyed snapshots "
+    "on ZFS, the cleanup of deleted subvolumes on btrfs, and snapshot deletion plus a "
+    "journal-pin flush on bcachefs. Work that filesystems schedule on their own "
+    "(bcachefs reconcile, btrfs async discard, dm-cache and dm-integrity writeback) "
+    "can still land in a later window. "
+    "Per-device deltas, I/O counts and discards: raw/<config>-block-io.jsonl. ")
+BLOCK_IO_SRC = [("run-bench.sh (block_io_*)", "scripts/run-bench.sh"),
+                ("block-io-counters.py", "scripts/block-io-counters.py")]
+
 # Per-metric documentation shown in the dashboard's "Metric reference"
 # section. Each entry: what exactly runs, how the number is computed, and
 # the source files responsible. Kept next to METRICS so they evolve together.
@@ -427,6 +443,116 @@ DOCS = {
         "delete-at-100% and writable-after-delete verdicts come from the same phase: fill "
         "to hard ENOSPC, rm a file, verify space returns and a new write succeeds. Phase 9.",
         [("run-bench.sh (Phase 9)", "scripts/run-bench.sh")]),
+    "seqwrite_write_amp": (
+        "Physical bytes written per byte fio wrote in the Phase 1 sequential write (1M "
+        "blocks, fsync at the end). Redundancy shows directly: ~1x single device, ~2x two"
+        " copies, n/(n-p) plus parity overhead for parity layouts; anything above that is"
+        " journal, metadata or CoW overhead. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "randwrite_write_amp": (
+        "Physical bytes written per byte fio wrote in the Phase 2 single-job random write"
+        " (4k, fdatasync every 16 IOs). Small synchronous writes expose journal commits, "
+        "CoW metadata updates and parity read-modify-write on top of redundancy. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "randwrite4_write_amp": (
+        "Same as the single-job random-write amplification for the 4-thread variant (one "
+        "file per thread). Compare with the single-job card: commit batching can lower "
+        "it, contention can raise it. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "randread_read_amp": (
+        "Physical bytes read per byte fio read in the Phase 3 single-job cold random read"
+        " (4k). Above 1x is read-ahead, metadata reads, and record/stripe granularity "
+        "(e.g. ZFS reading and checksumming whole records). Hosted-runner loop devices "
+        "have their own read-ahead settings, so this matters most on real hardware. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "randread4_read_amp": (
+        "Physical bytes read per byte fio read in the 4-thread cold random read. The four"
+        " jobs read the same file with independent random maps, so about 9% of the "
+        "logical reads at the default sizes are page-cache hits on blocks another job "
+        "already read. Those hits lower this ratio against the single-job card. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "seqread_read_amp": (
+        "Physical bytes read per byte fio read in the Phase 3.4 cold sequential read "
+        "(1M). Close to 1x is expected; a mirror serves each block from one copy. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "smalltree_create_write_amp": (
+        "Physical bytes written per byte of file payload while creating the 20k-file tree"
+        " (1-8k files, 200 directories), including the closing sync. Above redundancy, "
+        "part of the excess is allocation rounding: with 4k blocks the 1k and 2k files "
+        "each take a full block, about 1.33x on average before any metadata (btrfs stores"
+        " such small files inline in its metadata instead). The rest is per-file "
+        "metadata: inodes, directory entries, extent/btree updates, journal. Phase 3.6. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "smalltree_cp_write_amp": (
+        "Physical bytes written per byte of payload during the cold cp -r of the 20k-file"
+        " tree plus sync (write side only; the source reads are in the raw file). cp "
+        "defaults to --reflink=auto (GNU coreutils 9+ and uutils), so on filesystems "
+        "with reflink (btrfs, XFS, bcachefs, ZFS with block cloning) the copy shares "
+        "the data extents and this ratio is mostly metadata, often below 1x. "
+        "Elsewhere allocation rounding applies as for the create card. Phase 3.6. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "smalltree_rm_bytes_per_file": (
+        "Physical bytes written per file during rm -rf of the copied 20k-file tree plus "
+        "sync, i.e. the metadata cost of an unlink. Phase 3.6. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "largedir_create_bytes_per_file": (
+        "Physical bytes written per empty file while creating LARGEDIR_FILES files in one"
+        " directory plus sync. With empty files this is all metadata: inode and "
+        "directory-index growth. Phase 3.8. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "largedir_delete_bytes_per_file": (
+        "Physical bytes written per file during rm -rf of the large directory plus sync. "
+        "Phase 3.8. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "aging_write_amp": (
+        "Physical bytes written per byte fio overwrote across the whole snapshot-aging "
+        "loop (every iteration's snapshot plus its 4k overwrite pass), with one window "
+        "over the loop. On CoW filesystems this is the cost of redirecting writes away "
+        "from snapshot-pinned blocks; on LVM layouts it includes dm-snapshot copying "
+        "origin blocks into every snapshot. Phase 4. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "snapscale_create_bytes_per_snapshot": (
+        "Physical bytes written per snapshot while creating the snapshot-scaling series "
+        "back-to-back on unchanged data. The window closes before list, remount and "
+        "delete. Phase 5.5. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "compress_write_amp": (
+        "Physical bytes written per byte fio wrote into the zstd area (75%-compressible "
+        "data). Redundancy multiplied by the inverse compression ratio, so values below "
+        "1x are expected when compression is effective. Phase 6. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "divergence_plain_write_amp": (
+        "Physical bytes written per byte fio overwrote in the 4k overwrite of a plain "
+        "file with unshared extents. This is the baseline for the clone and snapshot "
+        "variants. Phase 6. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "divergence_clone_write_amp": (
+        "Physical bytes written per byte fio overwrote in a fresh reflink clone; the "
+        "window opens after the cp --reflink. The extra bytes over the plain-file card "
+        "are the unshare cost. Phase 6. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
+    "divergence_snap_write_amp": (
+        "Physical bytes written per byte fio overwrote right after snapshotting the file;"
+        " the window opens after the snapshot. The extra bytes over the plain-file card "
+        "are the CoW-after-snapshot cost. Phase 6. "
+        + BLOCK_IO_BASIS,
+        BLOCK_IO_SRC),
 }
 
 with open(os.path.join(os.path.dirname(__file__), "result-schema.json")) as fh:

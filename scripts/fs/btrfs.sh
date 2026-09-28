@@ -68,6 +68,17 @@ fs_compress_ratio() {
   fi
 }
 
+# btrfs subvolume delete only queues the subvolume; the cleaner thread drops
+# its tree afterwards and sync(2) does not wait for it. subvolume sync waits
+# until every deleted subvolume is gone from memory, and the second sync
+# commits the cleaner's last transaction, so snapshot cleanup stays in the
+# window that deleted the snapshots.
+fs_io_barrier() {
+  sync
+  btrfs subvolume sync "$MNT" >/dev/null || die "btrfs subvolume sync failed on $MNT"
+  sync
+}
+
 # Simulate device loss: unmount, drop one member, remount degraded.
 # Loop-device only — real hardware would need a SCSI/NVMe offline mechanism.
 fs_degrade() {
