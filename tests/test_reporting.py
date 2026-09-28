@@ -1804,6 +1804,55 @@ printf '%s\n' "$SEQWRITE_WRITE_AMP"
         self.assertEqual(result.stdout.strip(), "2")
         self.assertEqual(events, ["begin", "fio", "end seqwrite"])
 
+    def test_degraded_write_failure_captures_before_and_after_diagnostics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            events = Path(tmp) / "events"
+            result = run_benchmark_shell(
+                r'''
+SPARE_DEV=/dev/spare
+DATA=/mnt/data
+RUNTIME=30
+READ_SIZE=2G
+EVENTS=$2
+log() { :; }
+fs_degrade() { :; }
+fs_degraded_diagnostics() { printf 'diagnostics:%s\n' "$1" >> "$EVENTS"; }
+fio_json() { printf 'fio:%s\n' "$1" >> "$EVENTS"; return 5; }
+fs_drop_caches() { :; }
+fs_rebuild() { :; }
+set +e
+phase_degraded_rebuild
+status=$?
+set -e
+printf '%s\n' "$status"
+''',
+                events,
+            )
+
+            event_text = events.read_text().splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "1")
+        self.assertEqual(
+            event_text,
+            [
+                "diagnostics:before",
+                "fio:degraded-randwrite",
+                "diagnostics:after",
+            ],
+        )
+
+    def test_btrfs_raid6_degraded_diagnostics_capture_required_evidence(self):
+        backend = (ROOT / "scripts" / "fs" / "btrfs.sh").read_text()
+
+        self.assertIn('"$prefix-btrfs.txt"', backend)
+        self.assertIn('"$prefix-dmesg.txt"', backend)
+        self.assertIn('findmnt "$MNT"', backend)
+        self.assertIn('btrfs filesystem show "$MNT"', backend)
+        self.assertIn('btrfs filesystem usage -T "$MNT"', backend)
+        self.assertIn('btrfs device stats "$MNT"', backend)
+        self.assertIn("dmesg --time-format iso --color=never", backend)
+
     def test_block_io_window_opens_after_a_sync_barrier(self):
         result = run_benchmark_shell(
             r"""

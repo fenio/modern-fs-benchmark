@@ -734,8 +734,12 @@ DEG_READ_IOPS=null
 REBUILD_S=null
 if [ -n "$SPARE_DEV" ] && fs_degrade; then
   log "phase: degraded IO (one device failed)"
-  out=$(fio_json degraded-randwrite --directory="$DATA" --rw=randwrite \
-    --bs=4k --size=1G --runtime="$RUNTIME" --time_based --fdatasync=16)
+  fs_degraded_diagnostics before || true
+  if ! out=$(fio_json degraded-randwrite --directory="$DATA" --rw=randwrite \
+    --bs=4k --size=1G --runtime="$RUNTIME" --time_based --fdatasync=16); then
+    fs_degraded_diagnostics after || true
+    return 1
+  fi
   DEG_WRITE_IOPS=$(jq '.jobs[0].write.iops' "$out")
   fs_drop_caches || true
   out=$(fio_json degraded-randread --filename="$DATA/read.dat" --rw=randread \
