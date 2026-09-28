@@ -143,6 +143,10 @@ fs_free_bytes() {
 # to stderr. Default: unsupported.
 fs_scrub() { return 1; }
 
+# Best-effort backend evidence immediately around the degraded-write workload.
+# Default: no diagnostics needed.
+fs_degraded_diagnostics() { return 0; }  # $1 = before | after
+
 # Tool/module version string recorded in the result JSON. Matters most for
 # out-of-tree modules (ZFS, bcachefs DKMS) where the kernel version alone
 # says nothing about what was actually tested.

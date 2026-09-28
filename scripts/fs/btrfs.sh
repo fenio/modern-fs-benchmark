@@ -91,6 +91,30 @@ fs_degrade() {
   mount -t btrfs -o degraded,noatime "${DEVICES[0]}" "$MNT"
 }
 
+fs_degraded_diagnostics() { # <before|after>
+  [ "${LAYOUT:-raid1}" = raid6 ] || return 0
+  local label=$1
+  local prefix="$RESULTS_DIR/raw/$BENCH_ID-degraded-$label"
+  (
+    set +e
+    umask 022
+    {
+      printf '===== identity =====\n'
+      date -u +%FT%TZ
+      uname -a
+      printf '\n===== mount =====\n'
+      findmnt "$MNT"
+      printf '\n===== filesystem show =====\n'
+      timeout 15s btrfs filesystem show "$MNT"
+      printf '\n===== filesystem usage =====\n'
+      timeout 15s btrfs filesystem usage -T "$MNT"
+      printf '\n===== device stats =====\n'
+      timeout 15s btrfs device stats "$MNT"
+    } >"$prefix-btrfs.txt" 2>&1
+    dmesg --time-format iso --color=never >"$prefix-dmesg.txt" 2>&1 || true
+  )
+}
+
 fs_rebuild() {
   local devid
   devid=$(btrfs filesystem show "$MNT" \
