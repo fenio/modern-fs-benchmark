@@ -26,6 +26,11 @@ COMP_SIZE=${COMP_SIZE:-2G}
 RUNTIME=${RUNTIME:-30}
 LARGEDIR_FILES=${LARGEDIR_FILES:-100000}
 
+# Backends may adjust only the degraded-write fio invocation when a filesystem
+# or kernel limitation makes the default preallocation path unusable.
+# shellcheck disable=SC2034  # consumed by run-bench.sh
+DEGRADED_WRITE_FIO_ARGS=()
+
 DEVICES=()
 SPARE_DEV=
 SPARE_DEVICES=()

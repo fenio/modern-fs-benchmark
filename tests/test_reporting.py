@@ -1846,6 +1846,59 @@ printf '%s\n' "$status"
             ],
         )
 
+    def test_degraded_write_passes_backend_fio_arguments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            events = Path(tmp) / "events"
+            result = run_benchmark_shell(
+                r'''
+SPARE_DEV=/dev/spare
+DATA=/mnt/data
+RUNTIME=30
+READ_SIZE=2G
+EVENTS=$2
+DEGRADED_WRITE_FIO_ARGS=(--fallocate=none)
+log() { :; }
+fs_degrade() { :; }
+fs_degraded_diagnostics() { :; }
+fio_json() {
+  printf '%s\n' "$*" >> "$EVENTS"
+  if [ "$1" = degraded-randwrite ]; then
+    printf '{"jobs":[{"write":{"iops":123}}]}\n' > "$EVENTS-write.json"
+    printf '%s\n' "$EVENTS-write.json"
+  else
+    printf '{"jobs":[{"read":{"iops":456}}]}\n' > "$EVENTS-read.json"
+    printf '%s\n' "$EVENTS-read.json"
+  fi
+}
+fs_drop_caches() { :; }
+fs_rebuild() { return 1; }
+phase_degraded_rebuild
+''',
+                events,
+            )
+
+            event_text = events.read_text().splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--fdatasync=16 --fallocate=none", event_text[0])
+        self.assertNotIn("--fallocate=none", event_text[1])
+
+    def test_btrfs_raid6_scopes_degraded_write_workaround(self):
+        result = run_benchmark_shell(
+            r'''
+configure_benchmark btrfs raid6
+printf 'raid6:%s\n' "${DEGRADED_WRITE_FIO_ARGS[*]}"
+configure_benchmark btrfs raid1
+printf 'raid1:%s\n' "${DEGRADED_WRITE_FIO_ARGS[*]}"
+'''
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.splitlines(),
+            ["raid6:--fallocate=none", "raid1:"],
+        )
+
     def test_btrfs_raid6_degraded_diagnostics_capture_required_evidence(self):
         backend = (ROOT / "scripts" / "fs" / "btrfs.sh").read_text()
 

@@ -736,7 +736,8 @@ if [ -n "$SPARE_DEV" ] && fs_degrade; then
   log "phase: degraded IO (one device failed)"
   fs_degraded_diagnostics before || true
   if ! out=$(fio_json degraded-randwrite --directory="$DATA" --rw=randwrite \
-    --bs=4k --size=1G --runtime="$RUNTIME" --time_based --fdatasync=16); then
+    --bs=4k --size=1G --runtime="$RUNTIME" --time_based --fdatasync=16 \
+    "${DEGRADED_WRITE_FIO_ARGS[@]}"); then
     fs_degraded_diagnostics after || true
     return 1
   fi
