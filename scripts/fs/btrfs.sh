@@ -4,6 +4,15 @@
 # shellcheck disable=SC2034  # consumed by run-bench.sh
 FS_REFLINK=1
 
+DEGRADED_WRITE_FIO_ARGS=()
+if [ "${LAYOUT:-raid1}" = raid6 ]; then
+  # Work around the RAID56 checksum bug fixed upstream but not yet present in
+  # hosted-runner kernels. Keep the default-preallocation case in the standalone
+  # reproducer so it still reports when the Azure kernel gains the fix.
+  # https://lore.kernel.org/linux-btrfs/4ee4d3cf8971d35eb863407808c896d6120bcc59.1790758765.git.wqu@suse.com/
+  DEGRADED_WRITE_FIO_ARGS=(--fallocate=none)
+fi
+
 fs_setup() {
   local profile=${LAYOUT:-raid1}
   case "$profile" in
