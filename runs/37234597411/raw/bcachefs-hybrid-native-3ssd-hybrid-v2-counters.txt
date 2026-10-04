@@ -1,0 +1,272 @@
+accounting_key_to_wb_slowpath=since mount:                   6262
+since filesystem creation:     93088
+bkey_pack_pos_fail=since mount:                   0
+since filesystem creation:     0
+btree_cache_cannibalize=since mount:                   0
+since filesystem creation:     0
+btree_cache_cannibalize_lock=since mount:                   7438
+since filesystem creation:     40230
+btree_cache_cannibalize_lock_fail=since mount:                   10
+since filesystem creation:     129
+btree_cache_cannibalize_unlock=since mount:                   7438
+since filesystem creation:     40230
+btree_cache_reap=since mount:                   0
+since filesystem creation:     588
+btree_cache_scan=since mount:                   0
+since filesystem creation:     19
+btree_key_cache_fill=since mount:                   115150
+since filesystem creation:     787728
+btree_node_alloc=since mount:                   7796
+since filesystem creation:     60923
+btree_node_compact=since mount:                   7062
+since filesystem creation:     17543
+btree_node_free=since mount:                   14602
+since filesystem creation:     78073
+btree_node_merge=since mount:                   40
+since filesystem creation:     10663
+btree_node_merge_attempt=since mount:                   604
+since filesystem creation:     21879
+btree_node_read=since mount:                   1055
+since filesystem creation:     1744
+btree_node_rewrite=since mount:                   0
+since filesystem creation:     0
+btree_node_set_root=since mount:                   34
+since filesystem creation:     916
+btree_node_split=since mount:                   331
+since filesystem creation:     12034
+btree_node_write=since mount:                   28822
+since filesystem creation:     347037
+btree_path_relock_fail=since mount:                   230397
+since filesystem creation:     274467
+btree_path_upgrade_fail=since mount:                   4597
+since filesystem creation:     14100
+btree_reserve_get_fail=since mount:                   2
+since filesystem creation:     34
+bucket_alloc=since mount:                   29800
+since filesystem creation:     248750
+bucket_alloc_fail=since mount:                   0
+since filesystem creation:     0
+bucket_alloc_from_stripe=since mount:                   0
+since filesystem creation:     0
+bucket_discard=since mount:                   7678
+since filesystem creation:     140843
+bucket_discard_fast=since mount:                   0
+since filesystem creation:     26
+bucket_discard_fast_worker=since mount:                   20
+since filesystem creation:     46
+bucket_discard_worker=since mount:                   5139
+since filesystem creation:     42954
+bucket_invalidate=since mount:                   0
+since filesystem creation:     0
+cached_ptr_drop=since mount:                   14.5G
+since filesystem creation:     88.5G
+copygc=since mount:                   10
+since filesystem creation:     14
+copygc_wait_obsolete=since mount:                   0
+since filesystem creation:     0
+data_read=since mount:                   0
+since filesystem creation:     137G
+data_read_bounce=since mount:                   0
+since filesystem creation:     530543
+data_read_fail_and_poison=since mount:                   0
+since filesystem creation:     0
+data_read_hole=since mount:                   0
+since filesystem creation:     0
+data_read_inline=since mount:                   0
+since filesystem creation:     0
+data_read_narrow_crcs=since mount:                   0
+since filesystem creation:     0
+data_read_narrow_crcs_fail=since mount:                   0
+since filesystem creation:     0
+data_read_nopromote=since mount:                   0
+since filesystem creation:     601030
+data_read_nopromote_already_promoted=since mount:                   0
+since filesystem creation:     601030
+data_read_nopromote_congested=since mount:                   0
+since filesystem creation:     0
+data_read_nopromote_may_not=since mount:                   0
+since filesystem creation:     0
+data_read_nopromote_unwritten=since mount:                   0
+since filesystem creation:     0
+data_read_promote=since mount:                   0
+since filesystem creation:     0
+data_read_retry=since mount:                   0
+since filesystem creation:     0
+data_read_reuse_race=since mount:                   0
+since filesystem creation:     953
+data_read_split=since mount:                   0
+since filesystem creation:     73480
+data_update=since mount:                   14.5G
+since filesystem creation:     88.5G
+data_update_fail=since mount:                   0
+since filesystem creation:     207M
+data_update_in_flight=since mount:                   0
+since filesystem creation:     0
+data_update_key=since mount:                   14.5G
+since filesystem creation:     88.5G
+data_update_key_fail=since mount:                   148k
+since filesystem creation:     46.6M
+data_update_no_io=since mount:                   0
+since filesystem creation:     0
+data_update_noop_obsolete=since mount:                   0
+since filesystem creation:     0
+data_update_pred=since mount:                   0
+since filesystem creation:     0
+data_update_read=since mount:                   11.3G
+since filesystem creation:     111G
+data_update_start_fail_obsolete=since mount:                   0
+since filesystem creation:     0
+data_update_useless_write_fail=since mount:                   0
+since filesystem creation:     0
+data_update_write=since mount:                   11.2G
+since filesystem creation:     111G
+data_write=since mount:                   24.4G
+since filesystem creation:     146G
+error_throw=since mount:                   84057
+since filesystem creation:     6703906
+evacuate_bucket=since mount:                   0
+since filesystem creation:     0
+fsync=since mount:                   5
+since filesystem creation:     281224
+gc_gens_end=since mount:                   0
+since filesystem creation:     0
+gc_gens_start=since mount:                   0
+since filesystem creation:     0
+journal_flush=since mount:                   100
+since filesystem creation:     113055
+journal_full=since mount:                   0
+since filesystem creation:     0
+journal_pin_resize=since mount:                   0
+since filesystem creation:     0
+journal_reclaim_finish=since mount:                   22696
+since filesystem creation:     1079748
+journal_reclaim_start=since mount:                   22696
+since filesystem creation:     1079748
+journal_res_get_blocked=since mount:                   0
+since filesystem creation:     8
+journal_write=since mount:                   2218
+since filesystem creation:     126443
+open_bucket_alloc_fail=since mount:                   0
+since filesystem creation:     0
+reconcile_btree=since mount:                   0
+since filesystem creation:     0
+reconcile_clear_scan=since mount:                   1
+since filesystem creation:     1
+reconcile_data=since mount:                   14.5G
+since filesystem creation:     88.8G
+reconcile_phys=since mount:                   0
+since filesystem creation:     0
+reconcile_scan_device=since mount:                   0
+since filesystem creation:     0
+reconcile_scan_fs=since mount:                   0
+since filesystem creation:     0
+reconcile_scan_inum=since mount:                   0
+since filesystem creation:     0
+reconcile_scan_metadata=since mount:                   0
+since filesystem creation:     0
+reconcile_scan_pending=since mount:                   0
+since filesystem creation:     0
+reconcile_scan_stripes=since mount:                   0
+since filesystem creation:     0
+reconcile_set_pending=since mount:                   0
+since filesystem creation:     0
+reconcile_stripe=since mount:                   0
+since filesystem creation:     0
+sectors_alloc=since mount:                   29.1G
+since filesystem creation:     238G
+stripe_alloc=since mount:                   0
+since filesystem creation:     0
+stripe_create=since mount:                   0
+since filesystem creation:     0
+stripe_create_fail=since mount:                   0
+since filesystem creation:     0
+stripe_delete=since mount:                   0
+since filesystem creation:     0
+stripe_repair_race=since mount:                   0
+since filesystem creation:     0
+stripe_reuse=since mount:                   0
+since filesystem creation:     0
+stripe_update_bucket=since mount:                   0
+since filesystem creation:     0
+stripe_update_extent=since mount:                   0
+since filesystem creation:     0
+stripe_update_extent_fail=since mount:                   0
+since filesystem creation:     0
+sync_fs=since mount:                   18
+since filesystem creation:     118
+trans_blocked_journal_reclaim=since mount:                   0
+since filesystem creation:     0
+trans_restart_btree_node_reused=since mount:                   114
+since filesystem creation:     4287
+trans_restart_btree_node_split=since mount:                   4090
+since filesystem creation:     12249
+trans_restart_deadlock_waitlist_alloc=since mount:                   0
+since filesystem creation:     0
+trans_restart_fault_inject=since mount:                   0
+since filesystem creation:     0
+trans_restart_injected=since mount:                   0
+since filesystem creation:     0
+trans_restart_iter_upgrade=since mount:                   0
+since filesystem creation:     0
+trans_restart_journal_preres_get=since mount:                   0
+since filesystem creation:     0
+trans_restart_journal_reclaim=since mount:                   0
+since filesystem creation:     0
+trans_restart_journal_res_get=since mount:                   0
+since filesystem creation:     0
+trans_restart_key_cache_key_realloced=since mount:                   0
+since filesystem creation:     0
+trans_restart_key_cache_raced=since mount:                   0
+since filesystem creation:     0
+trans_restart_key_cache_upgrade=since mount:                   0
+since filesystem creation:     0
+trans_restart_mark_replicas=since mount:                   0
+since filesystem creation:     0
+trans_restart_mem_realloced=since mount:                   51
+since filesystem creation:     125
+trans_restart_memory_allocation_failure=since mount:                   0
+since filesystem creation:     0
+trans_restart_relock=since mount:                   30
+since filesystem creation:     95
+trans_restart_relock_after_fill=since mount:                   0
+since filesystem creation:     0
+trans_restart_relock_key_cache_fill_obsolete=since mount:                   0
+since filesystem creation:     0
+trans_restart_relock_next_node=since mount:                   0
+since filesystem creation:     0
+trans_restart_relock_parent_for_fill_obsolete=since mount:                   0
+since filesystem creation:     0
+trans_restart_relock_path=since mount:                   408
+since filesystem creation:     526
+trans_restart_relock_path_intent=since mount:                   0
+since filesystem creation:     0
+trans_restart_split_race=since mount:                   0
+since filesystem creation:     0
+trans_restart_too_many_iters=since mount:                   0
+since filesystem creation:     0
+trans_restart_traverse=since mount:                   0
+since filesystem creation:     0
+trans_restart_upgrade=since mount:                   4082
+since filesystem creation:     12432
+trans_restart_would_deadlock=since mount:                   36
+since filesystem creation:     5300
+trans_restart_would_deadlock_recursion_limit=since mount:                   0
+since filesystem creation:     0
+trans_restart_would_deadlock_write=since mount:                   0
+since filesystem creation:     0
+trans_restart_write_buffer_flush=since mount:                   0
+since filesystem creation:     0
+transaction_begin=since mount:                   7515419
+since filesystem creation:     208567592
+transaction_commit=since mount:                   4932585
+since filesystem creation:     29074833
+write_buffer_flush=since mount:                   2024
+since filesystem creation:     38703
+write_buffer_flush_slowpath=since mount:                   0
+since filesystem creation:     0
+write_buffer_flush_sync=since mount:                   288
+since filesystem creation:     1857
+write_buffer_maybe_flush=since mount:                   0
+since filesystem creation:     0
+write_super=since mount:                   346
+since filesystem creation:     707
