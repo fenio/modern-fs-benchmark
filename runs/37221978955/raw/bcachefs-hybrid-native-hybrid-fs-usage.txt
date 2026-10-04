@@ -1,0 +1,258 @@
+Filesystem: 598776bb-22b9-4c30-bf31-255b0f0c2dc2
+Size:             1.03T  
+Used:              133G  
+Online reserved:      0  
+
+
+     undegraded  
+2x:        133G  
+
+
+Data type  Required/total  Durability  Devices      Usage
+btree:     1/2             2           [sdc1 sdd1]   525M  
+user:      1/2             2           [sdg1 sdh1]  26.9G  
+user:      1/2             2           [sdi1 sdj1]  35.7M  
+user:      1/2             2           [sdi1 sdt1]  5.28G  
+user:      1/2             2           [sdi1 sdu1]  21.6G  
+user:      1/2             2           [sdj1 sdk1]  1.42G  
+user:      1/2             2           [sdj1 sdm1]   176M  
+user:      1/2             2           [sdj1 sdt1]  20.0G  
+user:      1/2             2           [sdj1 sdu1]  5.28G  
+user:      1/2             2           [sdk1 sdm1]  25.3G  
+user:      1/2             2           [sdk1 sdt1]   176M  
+user:      1/2             2           [sdm1 sdt1]  1.42G  
+user:      1/2             2           [sdt1 sdu1]  35.8M  
+user:      1/2             2           [sdc1 sdd1]  25.2G  
+
+
+Compression:
+type          compressed  uncompressed  average extent size  
+zstd               4.25G         16.0G                 485k  
+
+
+Btree usage:
+extents:              139M  
+inodes:              32.5M  
+dirents:             32.5M  
+xattrs:              32.5M  
+alloc:               31.0M  
+reflink:             19.5M  
+subvolumes:           512k  
+snapshots:            512k  
+lru:                 4.00M  
+freespace:            512k  
+need_discard:        1.00M  
+backpointers:         214M  
+bucket_gens:          512k  
+snapshot_trees:       512k  
+deleted_inodes:       512k  
+logged_ops:           512k  
+reconcile_work:      7.00M  
+subvolume_children:   512k  
+accounting:          7.00M  
+reconcile_scan:       512k  
+damage:               512k  
+
+
+Pending reconcile:   data  metadata  
+target:             12.6G         0  
+
+
+hdd.disk0 (device 0):  sdg1   rw       10%
+                        data  buckets  fragmented  
+  free:                 113G    58072              
+  sb:                  3.00M        3       3.00M  
+  journal:             1.00G      512              
+  btree:                   0        0              
+  user:                13.4G     6949        131M  
+  cached:                  0        0              
+  parity:                  0        0              
+  stripe:                  0        0              
+  need_gc_gens:            0        0              
+  need_discard:            0        0              
+  unstriped:               0        0              
+  multiple:                0        0              
+  capacity:             128G    65536  
+  bucket size:         2.00M  
+
+
+hdd.disk1 (device 1):  sdh1   rw       10%
+                        data  buckets  fragmented  
+  free:                 113G    58072              
+  sb:                  3.00M        3       3.00M  
+  journal:             1.00G      512              
+  btree:                   0        0              
+  user:                13.4G     6949        131M  
+  cached:                  0        0              
+  parity:                  0        0              
+  stripe:                  0        0              
+  need_gc_gens:            0        0              
+  need_discard:            0        0              
+  unstriped:               0        0              
+  multiple:                0        0              
+  capacity:             128G    65536  
+  bucket size:         2.00M  
+
+
+hdd.disk2 (device 2):  sdi1   rw       10%
+                        data  buckets  fragmented  
+  free:                 113G    58070              
+  sb:                  3.00M        3       3.00M  
+  journal:             1.00G      512              
+  btree:                   0        0              
+  user:                13.4G     6951        133M  
+  cached:                  0        0              
+  parity:                  0        0              
+  stripe:                  0        0              
+  need_gc_gens:            0        0              
+  need_discard:            0        0              
+  unstriped:               0        0              
+  multiple:                0        0              
+  capacity:             128G    65536  
+  bucket size:         2.00M  
+
+
+hdd.disk3 (device 3):  sdj1   rw       10%
+                        data  buckets  fragmented  
+  free:                 113G    58069              
+  sb:                  3.00M        3       3.00M  
+  journal:             1.00G      512              
+  btree:                   0        0              
+  user:                13.4G     6952        136M  
+  cached:                  0        0              
+  parity:                  0        0              
+  stripe:                  0        0              
+  need_gc_gens:            0        0              
+  need_discard:            0        0              
+  unstriped:               0        0              
+  multiple:                0        0              
+  capacity:             128G    65536  
+  bucket size:         2.00M  
+
+
+hdd.disk4 (device 4):  sdk1   rw       10%
+                        data  buckets  fragmented  
+  free:                 113G    58070              
+  sb:                  3.00M        3       3.00M  
+  journal:             1.00G      512              
+  btree:                   0        0              
+  user:                13.4G     6951        135M  
+  cached:                  0        0              
+  parity:                  0        0              
+  stripe:                  0        0              
+  need_gc_gens:            0        0              
+  need_discard:            0        0              
+  unstriped:               0        0              
+  multiple:                0        0              
+  capacity:             128G    65536  
+  bucket size:         2.00M  
+
+
+hdd.disk5 (device 5):  sdm1   rw       10%
+                        data  buckets  fragmented  
+  free:                 113G    58070              
+  sb:                  3.00M        3       3.00M  
+  journal:             1.00G      512              
+  btree:                   0        0              
+  user:                13.4G     6951        135M  
+  cached:                  0        0              
+  parity:                  0        0              
+  stripe:                  0        0              
+  need_gc_gens:            0        0              
+  need_discard:            0        0              
+  unstriped:               0        0              
+  multiple:                0        0              
+  capacity:             128G    65536  
+  bucket size:         2.00M  
+
+
+hdd.disk6 (device 6):  sdt1   rw       10%
+                        data  buckets  fragmented  
+  free:                 113G    58069              
+  sb:                  3.00M        3       3.00M  
+  journal:             1.00G      512              
+  btree:                   0        0              
+  user:                13.4G     6952        138M  
+  cached:                  0        0              
+  parity:                  0        0              
+  stripe:                  0        0              
+  need_gc_gens:            0        0              
+  need_discard:            0        0              
+  unstriped:               0        0              
+  multiple:                0        0              
+  capacity:             128G    65536  
+  bucket size:         2.00M  
+
+
+hdd.disk7 (device 7):  sdu1   rw       10%
+                        data  buckets  fragmented  
+  free:                 113G    58070              
+  sb:                  3.00M        3       3.00M  
+  journal:             1.00G      512              
+  btree:                   0        0              
+  user:                13.4G     6951        131M  
+  cached:                  0        0              
+  parity:                  0        0              
+  stripe:                  0        0              
+  need_gc_gens:            0        0              
+  need_discard:            0        0              
+  unstriped:               0        0              
+  multiple:                0        0              
+  capacity:             128G    65536  
+  bucket size:         2.00M  
+
+
+hot.ssd0 (device 8):  sdc1   rw       20%
+                       data  buckets  fragmented  
+  free:               47.4G    24281              
+  sb:                 3.00M        3       3.00M  
+  journal:             512M      256              
+  btree:               263M      317        372M  
+  user:               12.6G     6541        183M  
+  cached:                 0        0              
+  parity:                 0        0              
+  stripe:                 0        0              
+  need_gc_gens:           0        0              
+  need_discard:       2.68G     1370              
+  unstriped:              0        0              
+  multiple:               0        0              
+  capacity:           64.0G    32768  
+  bucket size:        2.00M  
+
+
+hot.ssd1 (device 9):  sdd1   rw       20%
+                       data  buckets  fragmented  
+  free:               47.4G    24281              
+  sb:                 3.00M        3       3.00M  
+  journal:             512M      256              
+  btree:               263M      317        372M  
+  user:               12.6G     6541        183M  
+  cached:                 0        0              
+  parity:                 0        0              
+  stripe:                 0        0              
+  need_gc_gens:           0        0              
+  need_discard:       2.68G     1370              
+  unstriped:              0        0              
+  multiple:               0        0              
+  capacity:           64.0G    32768  
+  bucket size:        2.00M  
+
+
+readcache.ssd0 (device 10):  sde1   rw        0%
+                              data  buckets  fragmented  
+  free:                      63.5G    32509              
+  sb:                        3.00M        3       3.00M  
+  journal:                    512M      256              
+  btree:                         0        0              
+  user:                          0        0              
+  cached:                        0        0              
+  parity:                        0        0              
+  stripe:                        0        0              
+  need_gc_gens:                  0        0              
+  need_discard:                  0        0              
+  unstriped:                     0        0              
+  multiple:                      0        0              
+  capacity:                  64.0G    32768  
+  bucket size:               2.00M  
+
+

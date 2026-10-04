@@ -1,0 +1,23 @@
+                                                    capacity     operations     bandwidth 
+pool                                              alloc   free   read  write   read  write
+------------------------------------------------  -----  -----  -----  -----  -----  -----
+fsbench_hybrid                                    73.4G   498G    106  1.05K  12.9M   239M
+  mirror-0                                        18.3G   109G     25    171  3.21M  50.1M
+    /dev/disk/by-id/wwn-0x5000c50094425a2b-part1      -      -     12     94  1.61M  25.1M
+    /dev/disk/by-id/wwn-0x5000c50094420143-part1      -      -     12     76  1.60M  25.1M
+  mirror-1                                        18.3G   109G     25    159  3.18M  49.6M
+    /dev/disk/by-id/wwn-0x5000c500944224af-part1      -      -     12     80  1.58M  24.8M
+    /dev/disk/by-id/wwn-0x5000c50094420323-part1      -      -     12     78  1.60M  24.8M
+  mirror-2                                        18.2G   109G     25    160  3.21M  49.0M
+    /dev/disk/by-id/wwn-0x5000c5009442212f-part1      -      -     12     84  1.58M  24.5M
+    /dev/disk/by-id/wwn-0x5000c5009442640f-part1      -      -     13     75  1.63M  24.5M
+  mirror-3                                        18.6G   108G     25    178  3.24M  50.0M
+    /dev/disk/by-id/wwn-0x5000c500944259f7-part1      -      -     13     94  1.63M  25.0M
+    /dev/disk/by-id/wwn-0x5000c50094422a7f-part1      -      -     12     84  1.62M  25.0M
+special                                               -      -      -      -      -      -
+  mirror-4                                         114M  63.4G      3    403   106K  40.3M
+    /dev/disk/by-id/wwn-0x5000cca04ec26e38-part1      -      -      1    201  54.0K  20.1M
+    /dev/disk/by-id/wwn-0x5000cca04ec25d84-part1      -      -      1    202  51.8K  20.1M
+cache                                                 -      -      -      -      -      -
+  /dev/disk/by-id/wwn-0x5000cca04ec25e3c-part1    62.7G  1.32G      1    262  28.5K  30.6M
+------------------------------------------------  -----  -----  -----  -----  -----  -----
