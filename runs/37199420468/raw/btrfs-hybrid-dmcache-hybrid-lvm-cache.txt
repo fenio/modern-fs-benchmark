@@ -1,0 +1,8 @@
+File descriptor 9 (/run/lock/modern-fs-benchmark.lock) leaked on lvs invocation. Parent PID 3501806: bash
+File descriptor 10 (/var/lib/modern-fs-benchmark/results/37199420468-1/btrfs-hybrid-dmcache/raw/btrfs-hybrid-dmcache-trace.log) leaked on lvs invocation. Parent PID 3501806: bash
+  LV                       VG             Attr       LSize   Pool               Origin         Data%  Meta%  Move Log Cpy%Sync Convert Devices                   CacheMode CachePolicy CacheSettings CacheTotalBlocks CacheUsedBlocks 
+  [cache_data_cpool]       fsbench_hybrid Cwi---C---  63.93g                                   99.98  0.11            46.20            cache_data_cpool_cdata(0) writeback smq                                 523744           523624
+  [cache_data_cpool_cdata] fsbench_hybrid Cwi-ao----  63.93g                                                                           /dev/md126(0)                                                                                  
+  [cache_data_cpool_cmeta] fsbench_hybrid ewi-ao----   3.99g                                                                           /dev/md125(0)                                                                                  
+  origin                   fsbench_hybrid Cwi-aoC--- 511.49g [cache_data_cpool] [origin_corig] 99.98  0.11            46.20            origin_corig(0)           writeback smq                                 523744           523624
+  [origin_corig]           fsbench_hybrid owi-aoC--- 511.49g                                                                           /dev/md127(0)                                                                                  
