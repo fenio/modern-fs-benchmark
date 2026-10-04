@@ -1,0 +1,26 @@
+  pool: fsbench_hybrid_v2
+ state: ONLINE
+config:
+
+	NAME                                              STATE     READ WRITE CKSUM
+	fsbench_hybrid_v2                                 ONLINE       0     0     0
+	  mirror-0                                        ONLINE       0     0     0
+	    /dev/disk/by-id/wwn-0x5000c50094425a2b-part1  ONLINE       0     0     0
+	    /dev/disk/by-id/wwn-0x5000c50094420143-part1  ONLINE       0     0     0
+	  mirror-1                                        ONLINE       0     0     0
+	    /dev/disk/by-id/wwn-0x5000c500944224af-part1  ONLINE       0     0     0
+	    /dev/disk/by-id/wwn-0x5000c50094420323-part1  ONLINE       0     0     0
+	  mirror-2                                        ONLINE       0     0     0
+	    /dev/disk/by-id/wwn-0x5000c5009442212f-part1  ONLINE       0     0     0
+	    /dev/disk/by-id/wwn-0x5000c5009442640f-part1  ONLINE       0     0     0
+	  mirror-3                                        ONLINE       0     0     0
+	    /dev/disk/by-id/wwn-0x5000c500944259f7-part1  ONLINE       0     0     0
+	    /dev/disk/by-id/wwn-0x5000c50094422a7f-part1  ONLINE       0     0     0
+	special	
+	  mirror-4                                        ONLINE       0     0     0
+	    /dev/disk/by-id/wwn-0x5000cca04ec26e38-part1  ONLINE       0     0     0
+	    /dev/disk/by-id/wwn-0x5000cca04ec25d84-part1  ONLINE       0     0     0
+	cache
+	  /dev/disk/by-id/wwn-0x5000cca04ec25e3c-part1    ONLINE       0     0     0
+
+errors: No known data errors
