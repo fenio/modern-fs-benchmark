@@ -1,0 +1,16 @@
+=== time_stats/data_promote ===
+count:     0
+                       since mount        recent
+duration of events
+  min:                        1 eon
+  max:                        0 ns
+  total:                      0 ns
+  mean:                       0 ns          0 ns
+  stddev:                     0 ns          0 ns
+time between events
+  min:                        1 eon
+  max:                        0 ns
+  mean:                       0 ns          0 ns
+  stddev:                     0 ns          0 ns
+=== options/promote_whole_extents ===
+0
