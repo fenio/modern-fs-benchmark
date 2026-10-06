@@ -43,12 +43,14 @@ done
 
 # modinfo reports the module on disk, not the one already loaded in RAM.
 disk_version=$(modinfo -F version bcachefs)
+disk_version=${disk_version#v}
 if [[ $disk_version != "$kernel_version" ]]; then
   echo "bcachefs module on disk is $disk_version; expected $kernel_version. Check DKMS for kernel $(uname -r)." >&2
   exit 1
 fi
 modprobe bcachefs
 loaded_version=$(cat /sys/module/bcachefs/version)
+loaded_version=${loaded_version#v}
 if [[ $loaded_version != "$kernel_version" ]]; then
   echo "loaded bcachefs module is $loaded_version; expected $kernel_version. Reboot the idle host or safely reload the module before benchmarking." >&2
   exit 1
