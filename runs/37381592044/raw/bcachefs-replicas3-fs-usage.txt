@@ -1,0 +1,15 @@
+Filesystem: 8859db2d-4a5c-4b52-bb3f-cc51c0c5daa2
+Size:             47001203200  
+Used:             14900883456  
+Online reserved:            0  
+
+
+      undegraded  
+3x:  14900883456  
+
+
+Device label            Device  State         Size        Used  Use%  
+(no label) (device 0):  dm-0    rw     17042501632  4966961152   30%  
+(no label) (device 1):  dm-1    rw     17042501632  4966961152   30%  
+(no label) (device 2):  dm-2    rw     17042501632  4966961152   30%  
+

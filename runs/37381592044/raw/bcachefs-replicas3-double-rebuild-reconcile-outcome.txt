@@ -1,0 +1,3 @@
+wait_exit_status=124
+status_exit_status=0
+timeout_seconds=600

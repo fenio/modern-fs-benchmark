@@ -1,0 +1,27 @@
+/dev/md/fsbench:
+           Version : 1.2
+     Creation Time : Tue Oct  6 00:52:07 2026
+        Raid Level : raid1
+        Array Size : 16759808 (15.98 GiB 17.16 GB)
+     Used Dev Size : 16759808 (15.98 GiB 17.16 GB)
+      Raid Devices : 3
+     Total Devices : 3
+       Persistence : Superblock is persistent
+
+       Update Time : Tue Oct  6 00:58:08 2026
+             State : clean 
+    Active Devices : 3
+   Working Devices : 3
+    Failed Devices : 0
+     Spare Devices : 0
+
+Consistency Policy : resync
+
+              Name : bcachefs-test:fsbench  (local to host bcachefs-test)
+              UUID : d8ee72e7:24b9fffd:419bc12d:27354bf5
+            Events : 55
+
+    Number   Major   Minor   RaidDevice State
+       0     253        0        0      active sync   /dev/dm-0
+       3     253        3        1      active sync   /dev/dm-3
+       4     253        4        2      active sync   /dev/dm-4
