@@ -104,6 +104,10 @@ if ! flock -w 3600 9; then
   exit 75
 fi
 
+if [[ $fs == bcachefs && $MANAGED_BENCHMARK_PROFILE == sas-hdd ]]; then
+  bash "$(dirname -- "${BASH_SOURCE[0]}")/check-bcachefs-version.sh" --check
+fi
+
 require_size() {
   local device=$1 expected=$2 actual
   if [[ ! -b $device ]]; then

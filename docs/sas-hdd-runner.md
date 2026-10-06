@@ -97,6 +97,31 @@ done
 sudo modprobe dm_raid dm_snapshot dm_integrity zfs bcachefs
 ```
 
+### Keeping bcachefs current
+
+Unlike ephemeral hosted CI, all four SAS campaigns share the installed host
+packages. Deploying benchmark code does not upgrade these packages. Before each
+bcachefs job, the managed runner refreshes APT metadata and requires the tools and
+DKMS packages to match their current APT candidates. It also checks both the
+on-disk and loaded module versions for the running kernel, before disk setup.
+Repository update errors fail the job rather than accept stale metadata.
+
+With campaigns idle, run from the administrative checkout:
+
+```bash
+sudo bash scripts/check-bcachefs-version.sh --upgrade
+```
+
+This takes the same storage lock as the benchmarks and refuses to upgrade while
+storage is busy. It upgrades tools, DKMS, and the running kernel's headers; it
+does not unload modules or reboot automatically. If the loaded module is old,
+reboot the idle host (or safely reload it after checking no bcachefs mounts are
+in use), then verify with `sudo bash scripts/check-bcachefs-version.sh --check`.
+Do not queue campaigns until maintenance and verification have completed.
+“Current” means the candidate in the configured upstream APT repository, which
+may lag an upstream release announcement. Nix-managed hardware remains pinned
+to its Nix dependencies; it does not use this Debian-specific check.
+
 Deploy the current `origin/main` commit as an immutable root-owned tree.
 `REVISION` is checked against `${{ github.sha }}` before every job and is
 recorded in each result as `benchmark_revision`. The deployment script prepares
