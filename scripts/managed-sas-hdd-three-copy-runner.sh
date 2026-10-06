@@ -58,6 +58,10 @@ if ! flock -w 3600 9; then
   exit 75
 fi
 
+if [[ $fs == bcachefs ]]; then
+  bash "$(dirname -- "${BASH_SOURCE[0]}")/check-bcachefs-version.sh" --check
+fi
+
 require_size() {
   local device=$1 actual
   [[ -b $device ]] || { echo "$device is not a block device" >&2; exit 2; }
