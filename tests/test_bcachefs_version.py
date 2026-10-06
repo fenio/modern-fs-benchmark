@@ -66,6 +66,10 @@ class BcachefsVersionTests(unittest.TestCase):
         self.assertIn("module on disk is 1.39.6", result.stderr)
         self.assertNotIn("modprobe", calls)
 
+    def test_module_versions_accept_upstream_v_prefix(self):
+        result, _ = self.run_check(DISK_VERSION="v1.39.7", LOADED_VERSION="v1.39.7")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_repository_error_does_not_accept_cached_candidate(self):
         result, calls = self.run_check(APT_STATUS="100")
         self.assertEqual(result.returncode, 100)
