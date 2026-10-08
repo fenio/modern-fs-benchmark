@@ -1922,7 +1922,8 @@ block_io_begin
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(
-            result.stderr.splitlines(), ["sync", "python3 snapshot /dev/fake"]
+            result.stderr.splitlines(),
+            ["sync", "python3 --timeout 3600 /dev/fake", "python3 snapshot /dev/fake"]
         )
 
     def test_block_io_ratio_rejects_zero_denominator(self):

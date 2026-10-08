@@ -40,7 +40,11 @@ layered_integrity_wait() {
 
 layered_md_wait_idle() {
   local status=0 md action degraded
-  mdadm --wait /dev/md/fsbench >&2 || status=$?
+  timeout "${BENCH_ARRAY_READY_TIMEOUT:-3600}" mdadm --wait /dev/md/fsbench >&2 || status=$?
+  if ((status == 124)); then
+    log "MD activity did not finish within ${BENCH_ARRAY_READY_TIMEOUT:-3600}s"
+    return 1
+  fi
   ((status <= 1)) || return "$status"
   md=$(readlink -f /dev/md/fsbench) || return
   md=${md##*/}
@@ -374,8 +378,20 @@ layered_teardown() {
       INTEGRITY_SPARE=
       ;;
     md-*)
-      mdadm --stop /dev/md/fsbench 2>/dev/null || true
-      mdadm --zero-superblock "${DEVICES[@]}" 2>/dev/null || true
+      if [[ -e /dev/md/fsbench ]]; then
+        mdadm --stop /dev/md/fsbench || return
+        udevadm settle || return
+      fi
+      local -a md_devices=("${DEVICES[@]}" "${SPARE_DEVICES[@]}")
+      [[ -z $SPARE_DEV ]] || md_devices+=("$SPARE_DEV")
+      # Rebuild writes an MD superblock onto the replacement, too. Leaving
+      # it behind lets boot-time assembly reserve the benchmark array name.
+      local device
+      for device in "${md_devices[@]}"; do
+        if mdadm --examine "$device" >/dev/null 2>&1; then
+          mdadm --zero-superblock "$device" || return
+        fi
+      done
       ;;
     lvm-*)
       vgremove -fy "$VG" 2>/dev/null || true

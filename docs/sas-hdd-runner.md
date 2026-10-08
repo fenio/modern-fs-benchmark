@@ -122,6 +122,32 @@ Do not queue campaigns until maintenance and verification have completed.
 may lag an upstream release announcement. Nix-managed hardware remains pinned
 to its Nix dependencies; it does not use this Debian-specific check.
 
+### Clean RAID starts and reboot recovery
+
+All environments (hosted CI, Nix-managed hardware, and SAS) wait for healthy,
+idle MD/dm-raid arrays and completed dm-integrity recalculation before baseline
+phases and amplification counter windows. The bounded wait defaults to 3600
+seconds (`BENCH_ARRAY_READY_TIMEOUT`). A timeout or unreadable state fails the
+job. Waiting is outside measurement counters and timers; there is no continuous
+monitoring. Deliberate degradation, rebuild and scrub phases keep their own rules.
+
+Regular MD cleanup also erases superblocks from replacement spares after stopping
+the array, preventing a leftover spare from reserving `/dev/md/fsbench` at boot.
+An already auto-assembled inactive array needs explicit maintenance, not a retry.
+On this dedicated SAS host, while all campaigns are idle:
+
+```bash
+sudo bash contrib/sas-hdd/prepare-md-host.sh --apply
+```
+
+The helper takes the storage lock, checks the SAS profile, and stops only inactive
+arrays whose members all belong to the fixed benchmark inventory. It refuses
+active or foreign arrays. It backs up mdadm.conf, disables automatic assembly
+host-wide (`AUTO -all`), masks automatic MD scrub services/timers, and updates all
+installed initramfs images. Do not use this host policy on machines requiring
+automatic MD assembly for real storage. Explicit benchmark array creation and
+the benchmark's measured scrub phase remain enabled. CI does not run this helper.
+
 Deploy the current `origin/main` commit as an immutable root-owned tree.
 `REVISION` is checked against `${{ github.sha }}` before every job and is
 recorded in each result as `benchmark_revision`. The deployment script prepares

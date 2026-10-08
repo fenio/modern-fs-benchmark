@@ -63,19 +63,7 @@ three_copy_run_phases() {
   THREE_COPY_FS_STARTED=1
   THREE_COPY_MOUNT_DEVICE=
   setup_benchmark_filesystem
-  phase_sequential_write
-  phase_random_write
-  phase_random_read
-  phase_sequential_read
-  phase_trivial_latency
-  phase_source_tree
-  phase_sparse_files
-  phase_large_directory
-  phase_aging
-  phase_snapshot_reclaim
-  phase_snapshot_scaling
-  phase_compression
-  phase_divergence
+  run_baseline_phases
   three_copy_phase_single_loss
   if [[ $REBUILD_S != null ]]; then
     phase_corruption_scrub
