@@ -13,6 +13,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 BENCH_DEFER_RESULT_FINALIZATION=0
+BLOCK_IO_ROOTS=()
 
 configure_benchmark() {
   FS=${1:?usage: run-bench.sh <fs> <layout>}
@@ -54,8 +55,18 @@ enable_trace() {
 # with txg and log-push timing instead of with the stack. Background work a
 # filesystem schedules on its own (bcachefs reconcile, btrfs async discard,
 # dm-cache writeback) can still land in a later step's window.
+benchmark_wait_ready() {
+  # No monitoring inside measurements; intentional fault phases are exempt.
+  [[ ${BENCH_INTENTIONAL_ARRAY_ACTIVITY:-0} == 1 ]] && return 0
+  ((${#BLOCK_IO_ROOTS[@]})) || return 0
+  python3 "$SCRIPT_DIR/wait-block-ready.py" \
+    --timeout "${BENCH_ARRAY_READY_TIMEOUT:-3600}" "${BLOCK_IO_ROOTS[@]}" \
+    || die "benchmark devices are not healthy and idle"
+}
+
 block_io_begin() {
   fs_io_barrier
+  benchmark_wait_ready
   BLOCK_IO_BEFORE=$(python3 "$SCRIPT_DIR/block-io-counters.py" snapshot \
     "${BLOCK_IO_ROOTS[@]}") || die "failed to snapshot block I/O counters"
 }
@@ -120,6 +131,7 @@ BLOCK_QUEUE_JSON=$(python3 "$SCRIPT_DIR/block-queue-provenance.py" \
 [ "$(jq length <<<"$BLOCK_QUEUE_JSON")" -gt 0 ] \
   || die "no leaf block queues found for benchmark topology"
 BLOCK_IO_ROOTS=("${queue_roots[@]}")
+benchmark_wait_ready
 FS_VERSION=$(fs_version 2>/dev/null || true)
 log "$FS ($LAYOUT) mounted at $MNT, data dir $DATA${FS_VERSION:+ [$FS_VERSION]}"
 }
@@ -248,10 +260,12 @@ RANDREAD4_READ_AMP=$(block_io_ratio "$BLOCK_IO_READ_BYTES" \
   "$(jq '.jobs[0].read.io_bytes' "$out")")
 if hardware_random_scaling_enabled; then
   fs_drop_caches
+  benchmark_wait_ready
   out=$(fio_json randread-par8 --filename="$DATA/read.dat" --rw=randread --bs=4k \
     --size="$READ_SIZE" --io_size=64M --numjobs=8 --group_reporting)
   RANDREAD8_IOPS=$(jq '.jobs[0].read.iops' "$out")
   fs_drop_caches
+  benchmark_wait_ready
   out=$(fio_json randread-par16 --filename="$DATA/read.dat" --rw=randread --bs=4k \
     --size="$READ_SIZE" --io_size=32M --numjobs=16 --group_reporting)
   RANDREAD16_IOPS=$(jq '.jobs[0].read.iops' "$out")
@@ -729,6 +743,7 @@ log "divergence: plain ${DIV_PLAIN_MBPS%.*}, clone ${DIV_CLONE_MBPS%.*}, after-s
 # --- Phase 7: degraded mode + rebuild --------------------------------------
 phase_degraded_rebuild() {
 local out t0
+local BENCH_INTENTIONAL_ARRAY_ACTIVITY=1
 DEG_WRITE_IOPS=null
 DEG_READ_IOPS=null
 REBUILD_S=null
@@ -771,6 +786,7 @@ fi
 # is right) and may serve corrupted data — that's the point of the test.
 phase_corruption_scrub() {
 local counts md5_before t0
+local BENCH_INTENTIONAL_ARRAY_ACTIVITY=1
 SCRUB_S=null
 SCRUB_FOUND=null
 SCRUB_REPAIRED=null
@@ -1129,22 +1145,21 @@ if (( ! BENCH_DEFER_RESULT_FINALIZATION )); then
 fi
 }
 
+run_baseline_phases() {
+  local phase
+  for phase in phase_sequential_write phase_random_write phase_random_read \
+    phase_sequential_read phase_trivial_latency phase_source_tree \
+    phase_sparse_files phase_large_directory phase_aging phase_snapshot_reclaim \
+    phase_snapshot_scaling phase_compression phase_divergence; do
+    benchmark_wait_ready
+    "$phase"
+  done
+}
+
 run_benchmark_phases() {
   phase_host_calibration
   setup_benchmark_filesystem
-  phase_sequential_write
-  phase_random_write
-  phase_random_read
-  phase_sequential_read
-  phase_trivial_latency
-  phase_source_tree
-  phase_sparse_files
-  phase_large_directory
-  phase_aging
-  phase_snapshot_reclaim
-  phase_snapshot_scaling
-  phase_compression
-  phase_divergence
+  run_baseline_phases
   phase_degraded_rebuild
   phase_corruption_scrub
   phase_enospc
