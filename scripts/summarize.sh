@@ -30,7 +30,8 @@ for f in "$@"; do
   [ -f "$f" ] || continue
   jq -r '
     def fmt: if . == null then "—" else (. * 100 | round / 100 | tostring) end;
-    "| \(.fs) | \(.layout) | \(.kernel) | " +
+    def layout_label: if .fs == "bcachefs" and .layout == "ec" then "ec (replicas=3)" else .layout end;
+    "| \(.fs) | \(layout_label) | \(.kernel) | " +
     "\(.results.seqwrite_mbps | round) | " +
     "\(.results.randwrite_iops | round) | " +
     "\(.results.fsync_p999_ms | fmt) | " +

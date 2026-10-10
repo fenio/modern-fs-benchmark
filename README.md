@@ -86,7 +86,8 @@ authoritative list is the matrix in `.github/workflows/bench.yml`):
   community request), btrfs `-d raid6 -m raid1c3`
   (parity metadata is discouraged — write hole), ext4 on md raid6, XFS on
   md RAID6 over per-member dm-integrity, and
-  bcachefs `--erasure_code --replicas=3` (stable since 1.37; write-hole-free
+  bcachefs `--erasure_code --replicas=3` (displayed as **bcachefs/ec (replicas=3)**;
+  internal result ID remains `bcachefs/ec`; stable since 1.37; write-hole-free
   by design — writes replicate first, background reconcile stripes them)
   (community request, incl. the correction that EC is no longer experimental)
 - **xfs on a ZFS zvol** — the Franken-stack people actually run: XFS

@@ -685,6 +685,7 @@ def entity_list(runs, benchmark_scenario=None):
                 capabilities.remove("reflink")
         out.append({
             "id": e,
+            "label": "bcachefs/ec (replicas=3)" if e == "bcachefs/ec" else e,
             "fi": slots[fam],
             "vi": vi,
             "capabilities": capabilities,
@@ -1027,6 +1028,7 @@ const key = e =>
 const latest = DATA.latest;
 const isStale = id => DATA.stale.includes(id);
 const ents = DATA.entities;
+const labelOf = e => e.label || e.id;
 const fmt = v => v == null ? "—"
   : typeof v === "string" ? v
   : v >= 100 ? Math.round(v).toLocaleString("en-US")
@@ -1208,7 +1210,7 @@ function buildScoreSummary(view) {
   const card = el("div", {class: "card wide index-card"});
   const table = el("table", {class: "index-table"});
   const columns = [
-    {label: "configuration", str: true, get: row => row.entity.id},
+    {label: "configuration", str: true, get: row => labelOf(row.entity)},
     {label: "Overall Core", get: row => row.overall},
     ...SCORE_MODEL.groups.map((group, index) => ({
       label: group.label, get: row => row.groups[index].ratio,
@@ -1236,7 +1238,7 @@ function buildScoreSummary(view) {
       return `<span>${metric ? metric.label : item.metric}: <b>${Math.round(item.ratio * 100)}</b></span>`;
     }).join("");
     const detail = el("div", {class: "index-detail", role: "region", "aria-live": "polite"},
-      `<b>${entity.id} · ${label}</b><br>${parts}`);
+      `<b>${labelOf(entity)} · ${label}</b><br>${parts}`);
     const cell = el("td", {colspan: String(columns.length)});
     cell.appendChild(detail);
     openDetail = el("tr", {class: "index-detail-row", id: "index-detail-active"});
@@ -1278,7 +1280,7 @@ function buildScoreSummary(view) {
     rows.forEach(row => {
       const tr = el("tr");
       tr.appendChild(el("td", {},
-        `<span style="display:inline-flex;align-items:center;gap:7px">${key(row.entity)}${row.entity.id}${isStale(row.entity.id) ? " \u2020" : ""}</span>`));
+        `<span style="display:inline-flex;align-items:center;gap:7px">${key(row.entity)}${labelOf(row.entity)}${isStale(row.entity.id) ? " \u2020" : ""}</span>`));
       tr.appendChild(el("td")).appendChild(indexButton(
         row.overall, null, null, "Show group contributions",
         button => showDetail(button, tr, row.entity, "Overall Core",
@@ -1354,7 +1356,7 @@ function drawBars(rows, metric) {
     const y = 4 + i * rowH;
     const name = svgel("text", {x: labW - 8, y: y + 15.5, "text-anchor": "end",
       fill: css("--ink-2")});
-    name.textContent = e.id + (isStale(e.id) ? " \u2020" : "");
+    name.textContent = labelOf(e) + (isStale(e.id) ? " \u2020" : "");
     svg.appendChild(name);
     // baseline tick
     svg.appendChild(svgel("rect", {x: labW, y: y + 2, width: 1, height: rowH - 6,
@@ -1379,7 +1381,7 @@ function drawBars(rows, metric) {
     // full-row hover target
     const hit = svgel("rect", {x: 0, y: y, width: W, height: rowH, fill: "transparent"});
     hit.addEventListener("mousemove", ev => showTT(
-      `<div class="row">${key(e)}${e.id}
+      `<div class="row">${key(e)}${labelOf(e)}
        <span class="v">${fmt(v)} ${metric.unit}</span></div>`, ev.clientX, ev.clientY));
     hit.addEventListener("mouseleave", hideTT);
     svg.appendChild(hit);
@@ -1588,7 +1590,7 @@ function renderExplorer(view) {
       unit = `% vs ${explorerBaseline}`;
     }
     return {
-      id: e.id, name: e.id, type: "line", data,
+      id: e.id, name: labelOf(e), type: "line", data,
       connectNulls: false, showSymbol: runs.length <= 30, symbolSize: 6,
       lineStyle: {width: 2.2, type: explorerLineType(e)},
       itemStyle: {color: color(e)}, emphasis: {focus: "series"},
@@ -1669,7 +1671,7 @@ function buildExplorer(view) {
     [["1", "24 hours"], ["7", "7 days"], ["30", "30 days"], ["0", "All history"]], explorerDays);
   const activeBaseline = view.some(e => e.id === explorerBaseline) ? explorerBaseline : (view[0] || {}).id;
   const baseline = explorerSelect("Baseline",
-    view.map(e => [e.id, e.id]), activeBaseline || "");
+    view.map(e => [e.id, labelOf(e)]), activeBaseline || "");
   explorerBaseline = activeBaseline || null;
   baseline.select.disabled = explorerMode !== "baseline";
   metric.select.addEventListener("change", () => { explorerMetric = metric.select.value; renderExplorer(view); });
@@ -1715,7 +1717,7 @@ function loadExplorerLibrary() {
 
 // ---- table (sort state survives rebuilds) ------------------------------------
 const cols = [
-  {label: "filesystem", str: true, get: (e, r, c) => e.id},
+  {label: "filesystem", str: true, get: (e, r, c) => labelOf(e)},
   ...DATA.metrics.map(m => ({label: m.label, unit: m.unit, get: (e, r, c) => r[m.key]})),
   {label: "scrub errors found", get: (e, r, c) => r.scrub_found},
   {label: "scrub repaired", get: (e, r, c) => r.scrub_repaired},
@@ -1786,7 +1788,7 @@ function buildTable(view) {
     });
     rows.forEach(({e, vals}) => {
       tbl.appendChild(el("tr", {},
-        `<td><span style="display:inline-flex;align-items:center;gap:7px">${key(e)}${e.id}${isStale(e.id) ? " \u2020" : ""}</span></td>` +
+        `<td><span style="display:inline-flex;align-items:center;gap:7px">${key(e)}${labelOf(e)}${isStale(e.id) ? " \u2020" : ""}</span></td>` +
         vals.slice(1, cols.length - 1).map(v => `<td>${fmt(v)}</td>`).join("") +
         `<td style="text-align:left">${vals[cols.length - 1] || "—"}</td>`));
     });
@@ -1915,7 +1917,7 @@ function syncControls() {
   const lg = el("div", {class: "legend"});
   ents.forEach(e => {
     const b = el("button", {class: "chip", type: "button", "aria-pressed": "true",
-      title: "Click to show/hide just this one"}, `${key(e)}${e.id}`);
+      title: "Click to show/hide just this one"}, `${key(e)}${labelOf(e)}`);
     b.addEventListener("click", () => {
       manual.set(e.id, !isActive(e));
       syncControls(); rebuild();
@@ -1964,7 +1966,7 @@ function rebuild() {
   if (iters > 0) {
     const xl = Array.from({length: iters}, (_, i) => `iter ${i + 1}`);
     agingCard.appendChild(zoomable(
-      view.map(e => ({name: e.id, color: color(e), dash: dash(e), keyHtml: key(e),
+      view.map(e => ({name: labelOf(e), color: color(e), dash: dash(e), keyHtml: key(e),
         points: ((latest.results[e.id] || {}).aging_mbps || []).map((v, j) => ({x: j, y: v}))})),
       xl, "MiB/s"));
   }
@@ -1994,7 +1996,7 @@ function rebuild() {
     const tgrid = el("div", {class: "grid"});
     const xl = runsView.map(r => (r.date || "").slice(5, 16).replace("T", " ") || r.id);
     DATA.metrics.forEach(m => {
-      const series = view.map(e => ({name: e.id, color: color(e), dash: dash(e), keyHtml: key(e),
+      const series = view.map(e => ({name: labelOf(e), color: color(e), dash: dash(e), keyHtml: key(e),
         points: runsView.map((r, j) => ({x: j, y: (r.results[e.id] || {})[m.key]}))}));
       if (!series.some(s => s.points.some(p => p.y != null))) return;
       const card = el("div", {class: "card"});
