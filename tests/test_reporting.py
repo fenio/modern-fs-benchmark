@@ -247,6 +247,35 @@ def dashboard_data(html):
 
 
 class DashboardRegressionTests(unittest.TestCase):
+    def test_bcachefs_ec_label_is_explicit_without_changing_result_ids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            shutil.copytree(FIXTURE_RUNS, runs)
+            ec_file = None
+            for path in runs.rglob("result-*.json"):
+                doc = json.loads(path.read_text())
+                if doc["fs"] == "bcachefs":
+                    doc["layout"] = "ec"
+                    path.write_text(json.dumps(doc))
+                    ec_file = path
+            self.assertIsNotNone(ec_file)
+            output = Path(tmp) / "index.html"
+            result = run_script(DASHBOARD, "--runs", runs, "--out", output)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            html = output.read_text()
+            data = dashboard_data(html)
+            entities = {entity["id"]: entity for entity in data["entities"]}
+            self.assertEqual(entities["bcachefs/ec"]["label"], "bcachefs/ec (replicas=3)")
+            self.assertEqual(entities["ext4/single"]["label"], "ext4/single")
+            self.assertIn("bcachefs/ec", data["latest"]["results"])
+            self.assertNotIn("bcachefs/ec (replicas=3)", data["latest"]["results"])
+            self.assertIn('id: e.id, name: labelOf(e), type: "line"', html)
+            self.assertIn("chipBtns.set(e.id, b)", html)
+            summary = subprocess.run(["bash", str(SUMMARIZE), str(ec_file)],
+                                     text=True, capture_output=True)
+            self.assertEqual(summary.returncode, 0, summary.stderr)
+            self.assertIn("| bcachefs | ec (replicas=3) |", summary.stdout)
+
     def test_generated_dashboard_preserves_current_data_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "index.html"
